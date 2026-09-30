@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import type { TokenResponse } from "../contracts";
 import { Api, ApiError } from "./api";
-import { AuthError, REFRESH_TOKEN_KEY, TokenStore, decodeJwt, type KeyValueStore } from "./auth";
+import { AuthError, REFRESH_TOKEN_KEY, TokenStore, browserLock, decodeJwt, type KeyValueStore, type LockFn } from "./auth";
 
 function jwt(claims: Record<string, unknown>): string {
   const b64 = (o: unknown) => btoa(JSON.stringify(o)).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
@@ -75,6 +75,37 @@ describe("TokenStore", () => {
     const [a, b] = await Promise.all([tokens.accessToken(), tokens.refresh()]);
     expect(a).toBe(b);
     expect(refresh).toHaveBeenCalledOnce();
+  });
+
+  it("two tabs refreshing at once never send the same (rotated) refresh token", async () => {
+    // Shared localStorage and a shared exclusive lock, like navigator.locks across tabs.
+    const storage = memoryStore();
+    storage.setItem(REFRESH_TOKEN_KEY, "rt-1");
+    let chain: Promise<unknown> = Promise.resolve();
+    const lock: LockFn = <T,>(_name: string, fn: () => Promise<T>) => {
+      const run = chain.then(fn);
+      chain = run.catch(() => undefined);
+      return run;
+    };
+    const used: string[] = [];
+    let n = 1;
+    const refresh = async (rt: string) => {
+      used.push(rt);
+      await Promise.resolve();
+      if (rt !== `rt-${n}`) throw new AuthError("reused");
+      n++;
+      return pair(n);
+    };
+    const tabA = new TokenStore(storage, refresh, () => NOW, lock);
+    const tabB = new TokenStore(storage, refresh, () => NOW, lock);
+    await Promise.all([tabA.refresh(), tabB.refresh()]);
+    expect(used).toEqual(["rt-1", "rt-2"]);
+    expect(storage.getItem(REFRESH_TOKEN_KEY)).toBe("rt-3");
+  });
+
+  it("uses no lock when the browser has none", () => {
+    expect(typeof browserLock).toBe("function");
+    expect(new TokenStore(memoryStore(), vi.fn(), () => NOW, null).hasRefreshToken).toBe(false);
   });
 
   it("fails with AuthError when there is no refresh token", async () => {

@@ -84,6 +84,13 @@ function frame<T extends ServerFrameInput>(f: T): T & { v: number } {
   return { v: PROTOCOL_VERSION, ...f };
 }
 
+/** 1-40 chars after whitespace collapse, like the chat service; null when invalid. */
+function validName(value: unknown): string | null {
+  if (typeof value !== "string") return null;
+  const n = value.replace(/\s+/g, " ").trim();
+  return n.length >= 1 && n.length <= 40 ? n : null;
+}
+
 function err(code: ErrorCode, extra: Partial<ErrorBody> = {}): ErrorBody {
   return { code, retryable: RETRYABLE.has(code), message: "", ...extra };
 }
@@ -297,14 +304,12 @@ export class MockServer {
   ): { status: number; body: unknown } {
     const fail = (status: number, e: ErrorBody) => ({ status, body: { error: e } });
     if (method === "POST" && path === "/auth/guest") {
-      const name = (body as { display_name?: unknown } | null)?.display_name;
-      if (typeof name !== "string" || !name.trim() || name.length > 64) return fail(422, err("VALIDATION"));
+      const name = validName((body as { display_name?: unknown } | null)?.display_name);
+      if (name === null) return fail(400, err("VALIDATION"));
       const id = `usr_${(++this.counter).toString(36)}${Math.random().toString(36).slice(2, 8)}`;
-      this.addMember(id, "user", name.trim());
-      this.broadcast(
-        frame({ type: "member.joined", session_id: this.sessionId, participant_id: id, display_name: name.trim() }),
-      );
-      this.system(`${name.trim()} joined`);
+      this.addMember(id, "user", name);
+      this.broadcast(frame({ type: "member.joined", session_id: this.sessionId, participant_id: id, display_name: name }));
+      this.system(`${name} joined`);
       return { status: 200, body: this.issue(id) };
     }
     if (method === "POST" && path === "/auth/refresh") {
@@ -321,14 +326,16 @@ export class MockServer {
     const sub = m[2];
     if (!sub && method === "GET") return { status: 200, body: this.sessionView() };
     if (sub === "/messages" && method === "GET") {
-      const limit = Math.min(REPLAY_PAGE, Number(q.get("limit") ?? REPLAY_PAGE));
+      const limit = Math.min(REPLAY_PAGE, Number(q.get("limit") ?? 50));
       const before = q.get("before_seq");
-      if (before !== null) {
-        const b = Number(before);
+      const afterParam = q.get("after_seq");
+      if (before !== null || afterParam === null) {
+        // before_seq pages backwards; no cursor at all returns the latest window.
+        const b = before !== null ? Number(before) : this.lastSeq + 1;
         const start = Math.max(0, b - 1 - limit);
         return { status: 200, body: { messages: this.messages.slice(start, b - 1), has_more: start > 0 } };
       }
-      const after = Number(q.get("after_seq") ?? 0);
+      const after = Number(afterParam);
       const page = this.messages.slice(after, after + limit);
       return { status: 200, body: { messages: page, has_more: after + limit < this.lastSeq } };
     }
@@ -338,16 +345,21 @@ export class MockServer {
       return r.ok ? { status: 200, body: { message_id: r.message_id, seq: r.seq } } : fail(400, r.error);
     }
     if (sub === "/agent" && method === "PATCH") {
-      const p = (body ?? {}) as { status?: string; name?: string };
+      const p = (body ?? {}) as { status?: string; name?: unknown };
       const who = this.members.get(auth.user)?.display_name ?? "Someone";
-      if (typeof p.name === "string" && p.name.trim() && p.name.trim() !== this.agent.name) {
-        this.agent.name = p.name.trim();
+      const newName = p.name === undefined ? undefined : validName(p.name);
+      if (newName === null) return fail(400, err("VALIDATION"));
+      if (p.status !== undefined && !["paused", "active", "following"].includes(p.status)) {
+        return fail(400, err("VALIDATION"));
+      }
+      if (newName !== undefined && newName !== this.agent.name) {
+        this.agent.name = newName;
         const member = this.members.get(MOCK_AGENT_ID);
         if (member) member.display_name = this.agent.name;
         this.system(`${who} renamed the AI to ${this.agent.name}`);
         this.broadcastAgent();
       }
-      if (p.status === "paused" || p.status === "active") this.setAgentPaused(p.status === "paused", who);
+      if (p.status !== undefined) this.setAgentPaused(p.status === "paused", who);
       return { status: 200, body: this.agentView() };
     }
     return fail(405, err("VALIDATION"));

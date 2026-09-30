@@ -52,15 +52,32 @@ export function decodeJwt(token: string): JwtClaims {
 
 export type RefreshFn = (refreshToken: string) => Promise<TokenResponse>;
 
+/** Runs `fn` while holding an exclusive lock shared by every tab of this origin. */
+export type LockFn = <T>(name: string, fn: () => Promise<T>) => Promise<T>;
+export const REFRESH_LOCK = "huddle.refresh";
+
+/** navigator.locks when the browser has it; otherwise no cross-tab lock (single-tab safety only). */
+export function browserLock(): LockFn | null {
+  const locks = typeof navigator === "undefined" ? undefined : (navigator as Partial<Navigator>).locks;
+  if (!locks) return null;
+  return (name, fn) => locks.request(name, fn);
+}
+
 export class TokenStore {
   private access: string | null = null;
   private user: string | null = null;
   private inflight: Promise<string> | null = null;
 
+  /**
+   * Refresh tokens rotate, and reusing a rotated one revokes the whole family (chat service).
+   * So refreshes are serialised: one in-flight refresh per tab, and a cross-tab lock around
+   * read-token -> refresh -> store, so no two tabs ever send the same refresh token.
+   */
   constructor(
     private readonly storage: KeyValueStore,
     private readonly refreshFn: RefreshFn,
     private readonly now: () => number = Date.now,
+    private readonly lock: LockFn | null = browserLock(),
   ) {}
 
   get userId(): string | null {
@@ -111,7 +128,12 @@ export class TokenStore {
     return this.inflight;
   }
 
-  private async doRefresh(): Promise<string> {
+  private doRefresh(): Promise<string> {
+    return this.lock ? this.lock(REFRESH_LOCK, () => this.rotate()) : this.rotate();
+  }
+
+  /** Read the newest refresh token (another tab may have just rotated it) and rotate it. */
+  private async rotate(): Promise<string> {
     const rt = this.readRefresh();
     if (rt === null) throw new AuthError("no refresh token");
     const tokens = await this.refreshFn(rt); // AuthError when rejected; other errors propagate

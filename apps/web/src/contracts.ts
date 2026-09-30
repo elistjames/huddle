@@ -19,6 +19,13 @@ export const PROTOCOL_VERSION = 1;
 // ---- models.py -----------------------------------------------------------------------------
 
 export const MAX_BODY_CHARS = 4000; // Deep Dive §8
+/** Guest display_name and agent name: 1-40 chars after whitespace collapse (chat service). */
+export const MAX_NAME_CHARS = 40;
+
+/** Collapse whitespace runs, trim, and cap at MAX_NAME_CHARS, as the chat service validates. */
+export function normalizeName(name: string): string {
+  return name.replace(/\s+/g, " ").trim().slice(0, MAX_NAME_CHARS).trim();
+}
 
 export type SenderType = "user" | "agent" | "system";
 export type ParticipantType = "user" | "agent";

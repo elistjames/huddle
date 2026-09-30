@@ -4,6 +4,7 @@
  */
 import {
   MAX_BODY_CHARS,
+  normalizeName,
   type AgentView,
   type MemberView,
   type Message,
@@ -182,7 +183,7 @@ export class HuddleClient {
 
   /** JoinForm: POST /auth/guest, then connect. */
   async join(name: string): Promise<void> {
-    const displayName = name.trim();
+    const displayName = normalizeName(name);
     if (!displayName || this.snap.phase === "joining" || this.snap.phase === "in") return;
     this.update({ phase: "joining", joinFailed: false, displayName });
     try {
@@ -488,7 +489,7 @@ export class HuddleClient {
   }
 
   rename(name: string): Promise<void> {
-    const n = name.trim();
+    const n = normalizeName(name);
     return n ? this.patchAgent({ name: n }) : Promise.resolve();
   }
 

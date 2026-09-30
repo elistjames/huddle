@@ -117,6 +117,13 @@ describe("join and connect", () => {
     expect(window.localStorage.getItem(REFRESH_TOKEN_KEY)).toBeNull();
   });
 
+  it("normalises the guest name (1-40 chars, whitespace collapsed) before joining", async () => {
+    newServer({ agent: false });
+    client = await joined("  Eli \t  St. James  ");
+    expect(client.getSnapshot().displayName).toBe("Eli St. James");
+    expect(bodies(client).at(-1)).toBe("Eli St. James joined");
+  });
+
   it("a fresh join loads the last window; Load earlier pages in the rest", async () => {
     newServer({ windowSize: 3 });
     client = await joined();
@@ -312,6 +319,10 @@ describe("agent controls, session end, export", () => {
     await p;
     expect(client.getSnapshot().agent).toMatchObject({ name: "Sage", state: "following", id: MOCK_AGENT_ID });
     expect(bodies(client).slice(-3)).toEqual(["Eli paused Huddle AI", "Eli resumed Huddle AI", "Eli renamed the AI to Sage"]);
+    p = client.rename(`  ${"N".repeat(55)}  `);
+    await advance(50);
+    await p;
+    expect(client.getSnapshot().agent?.name).toBe("N".repeat(40));
   });
 
   it("agent.status carries the budget as a percentage and refill time; resting when spent", async () => {

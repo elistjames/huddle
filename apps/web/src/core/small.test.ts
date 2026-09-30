@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ErrorBody, ErrorCode } from "../contracts";
+import { normalizeName, type ErrorBody, type ErrorCode } from "../contracts";
 import { BACKOFF_CAP_MS, backoffCeiling, backoffDelay } from "./backoff";
 import { ackTimeoutError, failureView, parseErrorBody } from "./errors";
 import { parseBody } from "./text";
@@ -92,6 +92,15 @@ describe("parseErrorBody", () => {
     expect(parseErrorBody(401, null).code).toBe("UNAUTHENTICATED");
     expect(parseErrorBody(503, "nope")).toMatchObject({ code: "INTERNAL", retryable: true });
     expect(parseErrorBody(422, { detail: "bad" }).code).toBe("VALIDATION");
+  });
+});
+
+describe("normalizeName: 1-40 chars after whitespace collapse", () => {
+  it("collapses whitespace, trims and caps at 40", () => {
+    expect(normalizeName("  Eli \t St.\n James ")).toBe("Eli St. James");
+    expect(normalizeName("x".repeat(60))).toHaveLength(40);
+    expect(normalizeName(`${"a".repeat(39)} b`)).toBe("a".repeat(39));
+    expect(normalizeName("   ")).toBe("");
   });
 });
 
