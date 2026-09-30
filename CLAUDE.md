@@ -2,7 +2,7 @@
 
 Huddle is a real-time group chat where people and one autonomous AI agent ("Huddle AI") share a single thread. The agent reads the same context as everyone and speaks up only when it has something worth adding.
 
-**Status: repo scaffolding only. No application code exists yet.** Build to the specs below.
+**Status: harness and shared contracts are in place; services and the web app are being built to the specs below.**
 
 > Naming: the product is **Huddle**. (It was once referred to as "Hubble"; the Notion specs and design system all say Huddle.)
 
@@ -24,30 +24,35 @@ These are mirrors of the Notion pages (links at the top of each file). If they d
 - **Receipts are cursors,** not per-message rows. ✓ stored, ✓✓ any one other human has it, amber ✓ the agent's cursor has passed it (means read, not "will reply").
 - **Consistency over availability:** reject sends when Postgres is down; do not buffer.
 - **The message store is the agent's source of truth.** Rebuild context from the latest summary plus the recent window.
-- **Agent policy:** two stages (gate + ~3B decider, then ~8B writer), debounce, cooldown, 1/N participation share, never two agent messages in a row, one re-engagement nudge per lull only if the conversation is open. Models are free and local (Ollama). Budget is a visible token bucket, in tokens never dollars.
+- **Agent policy:** two stages (gate + ~3B decider, then ~8B writer), debounce, cooldown, 1/N participation share, never two agent messages in a row, one re-engagement nudge per lull only if the conversation is open. Models are free and local (Ollama). Budget is a visible fixed-window token budget (D-019), measured in tokens never dollars, shown as a percentage.
 - **Agent errors never appear in the thread;** they show only as the paused / resting / away state. Never say "typing" or "thinking"; the agent is "Huddle AI", never "Assistant" or "Bot".
 - **UI:** amber means AI and only AI. Use the tokens and components in `design/`; do not hardcode colours or restyle components.
 
-## Stack (from the TDD)
+## Architecture: distributed, one deployable per service
 
-Python (FastAPI gateways, pure-Python chat service), PostgreSQL (Alembic migrations, expand-then-contract), Redis (connection registry, pub/sub fan-out, Streams for agent triggers, sorted set for nudge timers), LangChain + Ollama (Llama models) for the agent orchestrator, React 18 for the client (see `design/docs/USAGE.md`). Local dev via docker-compose.
+`services/gateway` (WebSocket), `services/chat` (public REST + internal API, owns Postgres writes, fan-out, receipts, budget), `services/agent` (orchestrator worker), `apps/web` (client). Each service has its own package, `pyproject.toml`, Dockerfile and container; they run on separate servers and talk **only** over HTTP (`X-Service-Token`), Redis (pub/sub fan-out, `agent:triggers` stream, `agent:timers`, connection registry) and Postgres. **No service imports another service's code.** The only shared code is `libs/contracts` (pydantic wire types, Redis key names, pure fixed-window budget math). If you need a new cross-service shape, add it to `libs/contracts` and to Deep Dive §3/§6 in the same PR.
 
-The repository layout, package manager, test runner and client build tooling are **not yet decided**. Propose them and record the choice in `docs/decisions.md` before scaffolding.
+Stack: Python 3.11+ (uv workspace, single `uv.lock`), FastAPI, SQLAlchemy Core + asyncpg + Alembic (expand-then-contract), redis-py, LangChain + Ollama, React 18 + Vite + TypeScript for the client. See `docs/decisions.md` (R-003 to R-006).
+
+## The development loop (harness; details in `docs/harness.md`)
+
+1. Work from an issue that cites spec sections and D-numbers.
+2. Implement against the spec. Cite D-numbers. Never contradict a locked decision silently.
+3. **Run `scripts/gate.sh` before every commit.** It runs ruff format + lint, bandit, pyright (strict), pytest and the INDEX check, all legs every time. Do not commit with it red. Do not weaken a check to pass it; use a narrowly scoped, justified `# nosec BXXX` / `# noqa` only.
+4. Integration tests are marked `@pytest.mark.integration`. Start local stores with `eval "$(scripts/dev-stores.sh)"` (real Postgres 16 + Redis, no Docker). Without the env vars they skip locally; CI sets `HUDDLE_REQUIRE_STORES=1` so they fail instead.
+5. Update `INDEX.md` when adding a package or directory.
+6. Review is done by a different agent/session that sees only the spec and the diff.
+
+Commands: `uv sync`, `uv run pytest -m "not integration"`, `uv run pyright`, `uv run ruff format . && uv run ruff check . --fix`, `scripts/gate.sh`.
 
 ## Repository layout
 
-```
-CLAUDE.md            this file
-README.md            project overview
-docs/
-  README.md          index of the docs
-  decisions.md       repo-level decisions made after the Notion specs (append here)
-  specs/             prd.md, tdd.md, deep-dive.md, design-system.md (Notion mirrors)
-design/              the Huddle design system (tokens, React components, icons, logos, prototype)
-```
+See `INDEX.md`.
 
 ## Working agreements
 
 - Develop on the branch you were given; small, focused commits; do not open PRs unless asked.
-- Tests follow Deep Dive §11 (sequence gaplessness, idempotency, authorization, agent gate rules, token bucket, reconnect, multi-client consistency, agent evals).
-- Keep observability in mind from the start (Deep Dive §9): structured logs with `trace_id`, agent run records.
+- Tests follow Deep Dive §11 (sequence gaplessness, idempotency, authorization, agent gate rules, budget window, reconnect, multi-client consistency, agent evals).
+- Observability from the start (Deep Dive §9): structured JSON logs with `ts, service, trace_id, session_id, actor_id, message_id, seq, event, latency_ms`; never log message bodies.
+- Budget (D-019): fixed UTC-aligned 24 h window, shown to users only as a percentage used plus a refill time. Never show raw tokens.
+- Inactive agent (paused, resting, away) does not advance its read cursor (D-020).

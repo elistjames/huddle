@@ -20,11 +20,11 @@ There is no Figma file. The Notion page plus `design/` are the design source of 
 - **Phase 3:** multiple huddles and the list (`SessionRow`, built but unused in v1), invites, leaving, sign-up.
 - **Not designed (out of scope):** attachments, reactions, edit/delete, @mentions, human typing indicators, presence dots, push/email notifications. Paperclip, smile, reply and bell icons are reserved only.
 
-## Open questions (unresolved in Notion)
+## Open questions: resolved 2026-09-30
 
-- [ ] Should a paused, resting or away agent still advance its read cursor? The design shows the third tick only once the cursor moves, so messages sent in those states wait at ✓✓.
-- [ ] Confirm the wording of AI states, error lines and system notes. The spec does not fix it; the copy in `design/README.md` is a proposal.
-- [ ] Budget meter: tokens with "Refills continuously" (as designed, matching the tokens-not-dollars rule D-016) or a percentage with a refill time?
+- [x] A paused, resting or away agent does **not** advance its read cursor; messages wait at ✓✓ (D-020).
+- [x] The wording of AI states, error lines and system notes proposed in `design/README.md` is final for the MVP (D-020).
+- [x] Budget meter shows **percentage used** plus the refill time, on a fixed window (D-019). The bundled `BudgetMeter` still shows "312k of 500k tokens" and "Refills continuously"; `apps/web` wraps or replaces it until `design/` is updated. Do not show raw tokens to users.
 
 ## Next steps (from Notion)
 

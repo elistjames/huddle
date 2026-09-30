@@ -1,0 +1,16 @@
+name: zizmor
+on:
+  pull_request:
+    paths: [".github/**"]
+permissions:
+  contents: read
+jobs:
+  zizmor:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v5
+      - run: uvx zizmor .github

@@ -1,0 +1,21 @@
+name: OSV scan
+on:
+  pull_request:
+    paths: [uv.lock, "apps/web/package-lock.json"]
+  schedule:
+    - cron: "43 5 * * 1"
+permissions:
+  contents: read
+jobs:
+  osv:
+    name: OSV-Scanner
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: google/osv-scanner-action/osv-scanner-action@v2 # TODO(pin)
+        with:
+          scan-args: |-
+            --lockfile=uv.lock

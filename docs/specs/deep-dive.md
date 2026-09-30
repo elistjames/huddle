@@ -42,7 +42,7 @@ Source document: [Technical Design Document](tdd.md) · Product: [PRD](prd.md) �
 | Device connection | One live socket, kept in Redis | `connection_id`, `user_id`, `device_id`, `gateway_id`, `last_heartbeat`, TTL | Belongs to a user; routed through one gateway |
 | Agent run | One cycle of evaluating and possibly speaking | See §4 | Belongs to a session and an agent |
 | Session summary | Compacted older context for the agent | `covers_through_seq`, `summary` | Belongs to a session and an agent |
-| Agent budget | A token bucket that caps agent cost; shown to users | `capacity_tokens`, `tokens`, `refill_per_sec`, `updated_at` | One per session and agent |
+| Agent budget | A fixed-window token budget that caps agent load; shown to users as a percentage | `capacity_tokens`, `used_tokens`, `window_seconds`, `window_started_at` | One per session and agent |
 ### State machines
 - **Chat session:** `active → closed`. `archived` is a follow-up. The MVP session never closes.
 - **Session membership:** `invited → active → left | removed`. In the MVP, joining goes straight to `active`.
@@ -168,7 +168,7 @@ Nothing reaches a client without a `seq`. Moderation of agent output happens in 
 | agent_runs.model / input_tokens / output_tokens / latency_ms | mixed | – |  |  |
 | agent_runs.output_message_id | text | – | FK messages |  |
 | session_summaries | row | ✓ | Index on `(session_id, agent_id, created_at desc)` | Fields: `covers_through_seq`, `summary`, `token_count`, `model`. The latest row wins. |
-| agent_budgets | row | ✓ | PK `(session_id, agent_id)` | Fields: `capacity_tokens`, `tokens`, `refill_per_sec`, `updated_at`. The bucket is refilled lazily on each read. |
+| agent_budgets | row | ✓ | PK `(session_id, agent_id)` | Fields: `capacity_tokens`, `used_tokens`, `window_seconds`, `window_started_at`. **Fixed window (D-019):** when `now >= window_started_at + window_seconds` the row resets on the next read (`used_tokens = 0`, `window_started_at` advances to the current window boundary). There is no continuous or sliding refill. |
 | audit_events | row | ✓ | Index on `(session_id, created_at)` | Fields: `actor_id`, `action`, `target`, `payload`. Records membership and agent configuration changes. |
 ### Connection registry
 - **Redis key structure:**
@@ -253,12 +253,12 @@ triggered → eligible → context-built → generating → validated → commit
 - **Token budget per turn:**
 	- Decider: at most 4k tokens in and 50 out.
 	- Writer: at most 12k tokens in and 300 out.
-- **Token budget per session:** a **token bucket** for each session and agent, measured in **tokens, never dollars**. The models run locally at no cost, so the bucket's job is to keep the local machine responsive and the agent's behavior predictable. The default capacity is 500k tokens, refilled continuously over 24 h *(tunable)*. Every model call (decider, writer and summarizer) debits the bucket.
-	- **Resting:** when the bucket holds less than one full turn, the agent is `resting`.
-	- **Transparency:** users always see the budget.
-		- The details panel shows a meter.
-		- When the agent is resting, the header shows "Huddle AI is resting · back at \{time\}". `{time}` is when the bucket will next hold enough for a turn.
-		- `agent.status` events carry `budget {remaining, capacity, refills_at}`.
+- **Token budget per session:** a **fixed-window token budget** for each session and agent, measured in **tokens, never dollars** (D-016, D-019). The models run locally at no cost, so the budget's job is to keep the local machine responsive and the agent's behavior predictable. The default capacity is 500k tokens per 24 h window *(tunable)*. Windows are fixed and aligned (window k covers `[k*window_seconds, (k+1)*window_seconds)` from the UTC epoch); at each window boundary usage resets to zero. It does not refill gradually and is not a sliding window. Every model call (decider, writer and summarizer) adds its tokens to `used_tokens`.
+	- **Resting:** when the tokens left in the current window are fewer than one full turn, the agent is `resting` until the window ends.
+	- **Transparency:** users always see the budget, **as a percentage used**, not raw tokens.
+		- The details panel shows a meter with "{used_pct}% used" and "Refills at {time}" (the window end).
+		- When the agent is resting, the header shows "Huddle AI is resting · back at \{time\}". `{time}` is the end of the current window.
+		- `agent.status` events carry `budget {used_pct, refills_at}` (`used_pct` is an integer 0 to 100; `refills_at` is the window end).
 - **Model selection and fallback policy.** This is a prototype with **no model spend**, so the models are free and local:
 	- **Runtime:** Ollama on the host machine, called through LangChain's `ChatOllama`.
 	- **Decider, summarizer and safety check:** a small open instruct model of about 3B parameters, such as Llama 3.2 3B.
@@ -314,7 +314,7 @@ triggered → eligible → context-built → generating → validated → commit
 - `message.created`
 - `sync.batch {messages, has_more}`
 - `receipt.updated {cursors: {participant_id: last_delivered_seq}}`
-- `agent.status {state: following|writing|paused|resting|away, budget {remaining, capacity, refills_at}}`
+- `agent.status {state: following|writing|paused|resting|away, budget {used_pct, refills_at}}`
 - `member.joined`, `member.left`
 - `session.updated`
 - `server.draining {reconnect_after_ms}`
@@ -471,14 +471,14 @@ All copy and visuals follow [Design System](../../design/README.md), which is th
 | Delivery failed | "Didn't send. Retry" in the danger colour | Retry, which reuses the same `client_msg_id` | An error, or the ack timed out |
 | Agent writing | Amber dots and "Huddle AI is writing". The word "thinking" is never used. | Send | The writer stage only, never during the decider. Otherwise the indicator would often appear and then vanish without a message. |
 | Agent paused | "Huddle AI is paused" in muted text | Resume | `agents.status = paused` |
-| Agent resting (budget) | "Huddle AI is resting · back at \{time\}" in muted text; the budget meter is empty | View the budget | The bucket holds less than one full turn |
+| Agent resting (budget) | "Huddle AI is resting · back at \{time\}" in muted text; the budget meter is full (100% used) | View the budget | Fewer than one full turn of tokens are left in the current window |
 | Agent unavailable | "Huddle AI is away right now" in muted text | None | Ollama is unreachable, and the optional fallback is off or also failed |
 | Session closed | A read-only thread; a system note replaces the composer | Export | `status = closed` |
 ### Agent presentation
 - **Agent name and avatar:** "Huddle AI" (or its configured name) with the amber circle avatar. It is never called "Assistant" or "Bot".
 - **How agent messages are labelled:** the bubble has the same shape and size as everyone else's, with an amber tint. There is no extra badge.
 - **Typing or thinking indicators:** the AgentIndicator shows "is following along" or "is writing".
-- **User controls:** pause and resume, plus the budget meter with its refill time.
+- **User controls:** pause and resume, plus the budget meter (percentage used) with its refill time.
 - **Visibility of agent errors or unavailable states:** errors never appear in the thread. They show only as the paused, resting or away state.
 ### Open decisions
 - None.
@@ -490,7 +490,7 @@ All copy and visuals follow [Design System](../../design/README.md), which is th
 - **Agent eligibility:** every gate rule, including the nudge conditions and the budget threshold.
 - **Context construction:** window size, summary folding at 80%, mapping `sender_type` to LangChain roles.
 - **Retry and timeout behavior:** the fallback model, lease expiry, superseded runs.
-- **Token bucket:** refill math and the `refills_at` calculation.
+- **Token budget:** fixed-window reset at the boundary, `used_pct` rounding, and the `refills_at` calculation.
 ### Integration tests
 - **Postgres persistence:** replay pagination and the redaction path.
 - **Redis registry and TTL behavior:** expiry after missed heartbeats; sorted-set cleanup.
@@ -576,9 +576,11 @@ All copy and visuals follow [Design System](../../design/README.md), which is th
 | D-013 | One re-engagement nudge per lull, only if the conversation is open | Stay silent when inactive; repeated nudges | Improves retention without nagging | Owner | 2026-09-29 | Accepted |
 | D-014 | A visible per-session token bucket with a refill time | A hidden cost cap | Users understand why the agent is resting | Owner | 2026-09-29 | Accepted |
 | D-015 | Free local models: Ollama with a \~3B decider and an \~8B writer; optional free-tier fallback | Claude API; paid hosted models | No model spend for the prototype. A Claude subscription doesn't include API access. | Owner | 2026-09-29 | Accepted |
-| D-016 | The budget bucket is measured in tokens, not dollars | A dollar cap | No model spend, so tokens are the real constraint | Owner | 2026-09-29 | Accepted |
+| D-016 | The budget is measured in tokens, not dollars | A dollar cap | No model spend, so tokens are the real constraint | Owner | 2026-09-29 | Accepted |
 | D-017 | ✓✓ fires when any one other human has received the message | Wait for every member | Offline members don't hold the sender's receipt back | Owner | 2026-09-29 | Accepted |
 | D-018 | Push and email notifications are out of MVP scope | Ship them with the nudge | Keeps the MVP small; nudges reach people who have the app open | Owner | 2026-09-29 | Accepted |
+| D-019 | The budget is a fixed-window token budget shown to users as a percentage used, with a refill time at the window end. Supersedes the continuous-refill bucket wording in D-014 and the "312k of 500k tokens" display. | Continuous or sliding refill; showing raw tokens | Simpler to implement, explain and test; the UI needs only a percentage | Owner | 2026-09-30 | Accepted |
+| D-020 | A paused, resting or away agent does not advance its read cursor, so messages sent meanwhile stay at ✓✓ until it catches up. The AI-state, error-line and system-note wording proposed in the design system is final for the MVP. | Advance the cursor while inactive | Keeps the amber tick honest: it means the agent read the message | Owner | 2026-09-30 | Accepted |
 ## Open Questions
 - None open. Q1 → D-017, Q2 → D-015, Q3 → D-016, Q4 → D-018 (all resolved 2026-09-29).
 ## Final Review Checklist
