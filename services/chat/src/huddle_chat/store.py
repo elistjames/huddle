@@ -62,6 +62,15 @@ class BudgetRow:
     used_tokens: int
     window_seconds: int
     window_started_at: datetime
+    prior_used_tokens: int = 0  # as stored before this call's window roll and debit
+
+    @property
+    def prior_visible(self) -> tuple[int, bool]:
+        """(used_pct, resting) as users last saw it, before this call changed anything."""
+        return (
+            budget_math.used_pct(self.prior_used_tokens, self.capacity_tokens),
+            budget_math.is_resting(self.prior_used_tokens, self.capacity_tokens),
+        )
 
     @property
     def refills_at(self) -> datetime:
@@ -477,6 +486,7 @@ async def budget(
         used_tokens=used,
         window_seconds=int(row.window_seconds),
         window_started_at=started,
+        prior_used_tokens=int(row.used_tokens),
     )
 
 

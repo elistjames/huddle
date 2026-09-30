@@ -74,6 +74,24 @@ async def test_budget_skips_idle_windows(service: ChatService, clock: Clock) -> 
     assert state.window_started_at == datetime(2026, 10, 5, tzinfo=UTC)
 
 
+async def test_first_debit_of_a_new_window_announces_the_end_of_resting(
+    service: ChatService, gateways: FakeGateways, clock: Clock
+) -> None:
+    ana = (await service.guest_join("Ana")).user_id
+    await gateways.start("g1")
+    await gateways.connect(ana, "g1")
+    await usage(service, budget_math.DEFAULT_CAPACITY_TOKENS)  # resting
+    clock.now = datetime(2026, 10, 1, 0, 0, 5, tzinfo=UTC)
+    assert await usage(service, 0) == 0  # the roll alone changes what users see
+    await gateways.drain()
+    statuses = [e["frame"] for e in gateways.frames("g1", "agent.status")]
+    assert [(s["state"], s["budget"]["used_pct"]) for s in statuses] == [
+        ("resting", 100),
+        ("following", 0),
+    ]
+    assert statuses[-1]["budget"]["refills_at"] == "2026-10-02T00:00:00Z"
+
+
 async def test_resting_when_less_than_one_turn_left_and_status_broadcast(
     service: ChatService, gateways: FakeGateways
 ) -> None:

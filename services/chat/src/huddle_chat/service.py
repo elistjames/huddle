@@ -30,7 +30,6 @@ from huddle_chat.ids import new_id
 from huddle_chat.obs import TraceContext, current_trace, log_event, trace
 from huddle_chat.redis_ops import RedisOps
 from huddle_chat.schema import chat_sessions
-from huddle_contracts import budget as budget_math
 from huddle_contracts.errors import ErrorCode
 from huddle_contracts.internal import (
     AckDeliveryRequest,
@@ -768,10 +767,8 @@ class ChatService:
             agent = await self._require_agent(conn, session_id)
             row = await self._budget_row(conn, session_id, agent.id, now, add=req.tokens)
             view: AgentView | None = None
-            before_used = row.used_tokens - req.tokens
-            before_pct = budget_math.used_pct(before_used, row.capacity_tokens)
-            before_resting = budget_math.is_resting(before_used, row.capacity_tokens)
-            if before_pct != row.used_pct or before_resting != row.resting:
+            # Compare with what users last saw, so a window roll (resting -> following) shows.
+            if row.prior_visible != (row.used_pct, row.resting):
                 view = await self._view_of(conn, session_id, agent, now)
             user_ids = await store.active_user_ids(conn, session_id) if view else []
         log_event(
