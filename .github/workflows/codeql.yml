@@ -9,6 +9,8 @@ permissions:
   contents: read
 jobs:
   analyze:
+    # Code scanning is free only for public repositories; skip while private (docs/harness.md).
+    if: ${{ !github.event.repository.private }}
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:

@@ -20,7 +20,7 @@ Adapted from the "Security from the first commit" post in https://github.com/fes
 | Secret scan | TruffleHog, verified only, PR + weekly | `secret-scan.yml` |
 | Dependency CVEs | OSV-Scanner on `uv.lock`, weekly + on lockfile change | `osv-scan.yml` |
 | Workflow audit | zizmor on `.github/`; waivers need a written reason | `zizmor.yml`, `.github/zizmor.yml` |
-| SAST | CodeQL (advisory first; promote to required once stable) | `codeql.yml` |
+| SAST | bandit + pyright run in the gate. CodeQL (advisory first; promote to required once stable) is in `codeql.yml` but skips itself while the repository is private, because code scanning is free only for public repositories; it starts running automatically once the repo is public | `codeql.yml` |
 | Supply chain | Locked deps (`uv.lock`, `package-lock.json`), Dependabot weekly, least-privilege `permissions:`, `persist-credentials: false`, `timeout-minutes`, concurrency groups | all workflows |
 | Exceptions | Every scanner has a documented waiver path: bandit inline `# nosec BXXX` with rationale per site; zizmor `.github/zizmor.yml`; OSV `osv-scanner.toml`; TruffleHog `.trufflehogignore` | |
 | Repo map | `INDEX.md` must list every package/dir (`scripts/check_index.py`) | |
