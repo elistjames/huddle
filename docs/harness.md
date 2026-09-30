@@ -38,4 +38,4 @@ OpenSSF Scorecard badge, SBOM/signing/provenance, container scanning, fuzzing be
 
 - Protect `main`: no direct pushes, no force-push/deletion, `enforce_admins`, require the `test`, `web`, `TruffleHog`, `OSV-Scanner` checks; add `CodeQL` once stable. Keep `zizmor` non-required (path-conditional).
 - Enable secret scanning with push protection, private vulnerability reporting, Dependabot security updates.
-- Pin third-party actions to commit SHAs (Dependabot then maintains them). The workflows currently use version tags with `TODO(pin)` markers; zizmor will flag them.
+- Third-party actions are pinned to commit SHAs with the version in a trailing comment; Dependabot (github-actions ecosystem, 7-day cooldown) maintains the pins, and zizmor fails the build on an unpinned action.

@@ -41,8 +41,8 @@ def test_verify_token_accepts_a_valid_access_token() -> None:
     [
         (make_token("u", exp_in=-10), ErrorCode.TOKEN_EXPIRED),
         (make_token("u", secret="x" * 64), ErrorCode.UNAUTHENTICATED),
-        (make_token("u", typ="refresh"), ErrorCode.UNAUTHENTICATED),
-        (make_token("", exp_in=60), ErrorCode.UNAUTHENTICATED),
+        (make_token("u", exp_in=36_000, typ="refresh"), ErrorCode.UNAUTHENTICATED),
+        (make_token("", exp_in=36_000), ErrorCode.UNAUTHENTICATED),
         ("not-a-jwt", ErrorCode.UNAUTHENTICATED),
         (raw_token({"sub": "u"}, JWT_SECRET, "HS256"), ErrorCode.UNAUTHENTICATED),
         (raw_token({"sub": "u", "exp": 2**40}, None, "none"), ErrorCode.UNAUTHENTICATED),

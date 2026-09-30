@@ -3,12 +3,16 @@ updates:
   - package-ecosystem: github-actions
     directory: /
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}
   - package-ecosystem: uv
     directory: /
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}
   - package-ecosystem: npm
     directory: /apps/web
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}
   - package-ecosystem: docker
     directory: /deploy
     schedule: {interval: weekly}
+    cooldown: {default-days: 7}

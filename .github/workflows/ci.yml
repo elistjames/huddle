@@ -30,10 +30,10 @@ jobs:
       HUDDLE_TEST_POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/postgres
       HUDDLE_TEST_REDIS_URL: redis://localhost:6379/0
     steps:
-      - uses: actions/checkout@v4 # TODO(pin): dependabot pins SHAs; see docs/harness.md
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
       - run: uv sync --frozen
       # All legs run even if one fails, so one round trip surfaces every failure.
       - id: format
@@ -65,13 +65,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
       - name: Skip if the web app is not scaffolded
         id: has
         run: test -f apps/web/package.json && echo "yes=true" >> "$GITHUB_OUTPUT" || echo "yes=false" >> "$GITHUB_OUTPUT"
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         if: steps.has.outputs.yes == 'true'
         with: {node-version: 22, cache: npm, cache-dependency-path: apps/web/package-lock.json}
       - if: steps.has.outputs.yes == 'true'

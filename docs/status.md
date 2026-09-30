@@ -6,7 +6,7 @@ Built to spec, all merged on the working branch: `libs/contracts`, `services/cha
 - **No real Ollama or Llama models were run.** Decider judgment, writer quality/length, safety check, real token counts, latency vs the 10 s/45 s timeouts, `num_ctx` effect and `away` detection are only tested against mocks and a scripted fake model.
 - The web client has not been driven against the real gateway/chat in a browser (only its mock backend, and Python-level E2E for the services).
 - Docker images could not be built exactly as committed here (ghcr.io blocked in the sandbox); scratch copies built and ran. `docker compose up` has not been run end to end.
-- CI workflows have never run on GitHub; actions are not SHA-pinned; branch protection is not configured.
+- Branch protection is not configured (see `docs/harness.md`); CI ran on the PR and its failures were fixed on the branch (see the PR).
 - No independent code review has been done (harness step 5).
 
 ## Decisions needed from the owner
