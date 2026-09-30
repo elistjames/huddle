@@ -10,9 +10,7 @@ Built to spec, all merged on the working branch: `libs/contracts`, `services/cha
 - No independent code review has been done (harness step 5).
 
 ## Decisions needed from the owner
-1. **Agent eval shortfalls** (kept visible as strict xfails in `services/agent/tests/evals`):
-   - Participation share for N = 2 reaches ~0.24 vs target 0.5 ±30% (cooldown doubling + one-message cap).
-   - Cost: a 500-message session uses ~486k of 500k tokens and rests for part of it (Deep Dive §11 wants one window, never resting). Options: smaller decider context, larger capacity, fewer evaluations.
+1. **Agent eval shortfalls: fixed (D-021).** Participation share is within ±30% of 1/N for N = 2-6 on several seeds, and a 500-message session uses ~400k of 500k tokens without resting. These are results against the scripted fake model and a simulated clock, not a real Llama; re-check on real Ollama. The changes are recorded as D-021 in the Deep Dive: please confirm them.
 2. **Amber tick with a single human:** the client draws the amber ✓ only on top of ✓✓, so a huddle with one human never shows it (spec §2 derives the ticks separately; design `Receipt` stacks them).
 3. **Spec gaps resolved by the builders** (confirm or write into the spec): gateway close codes (1008/1002/1001/1011), sixth connection refused, `typ=access` JWTs; chat: PATCH agent `status` values, name 1-40 chars, `client_msg_id` must be a UUID, joins emitted as system messages; agent: definition of "engagement", name-mention matching, kill switch shows `away`, catch-up read cursor after resume; web: see R-007 and `apps/web/README.md`.
 4. Not done by design: session export/ending (MVP session never closes), least-privilege Postgres role for the agent, phase 3.

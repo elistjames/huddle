@@ -110,7 +110,11 @@ async def test_resting_when_less_than_one_turn_left_and_status_broadcast(
     await gateways.drain()
     statuses = [e["frame"] for e in gateways.frames("g1", "agent.status")]
     assert [s["state"] for s in statuses] == ["following", "resting"]
-    assert statuses[-1]["budget"] == {"used_pct": 97, "refills_at": "2026-10-01T00:00:00Z"}
+    expected_pct = budget_math.used_pct(cap - budget_math.FULL_TURN_TOKENS + 1, cap)
+    assert statuses[-1]["budget"] == {
+        "used_pct": expected_pct,
+        "refills_at": "2026-10-01T00:00:00Z",
+    }
     assert "used_tokens" not in statuses[-1]["budget"]  # users never see raw tokens (D-019)
 
 

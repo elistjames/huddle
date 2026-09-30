@@ -75,7 +75,7 @@ async def test_speaks_through_the_single_write_path(
 async def test_decider_declines(
     world: MemoryWorld, model: ScriptedModel, executor: RunExecutor
 ) -> None:
-    ask(world, "thanks, see you")
+    ask(world, "the lunch spot changed to noon")
     model.script(Stage.DECIDE, False)
     out = await executor.execute(world.session_id)
     assert out.status == RunStatus.SKIPPED and out.skip_reason == "decider_declined"
@@ -85,9 +85,21 @@ async def test_decider_declines(
     assert world.usage and world.usage[0][2] > 0  # decider tokens debited
 
 
+async def test_trivial_batch_skips_without_a_decider_call(
+    world: MemoryWorld, model: ScriptedModel, executor: RunExecutor
+) -> None:
+    ask(world, "thanks")
+    out = await executor.execute(world.session_id)
+    assert out.status == RunStatus.SKIPPED and out.skip_reason == "trivial"
+    assert world.usage == []  # no model call, nothing debited
+    assert world.agent_cursor() == 1  # still read: the agent is active
+
+
 async def test_cooldown_skip_says_when_to_retry(
     world: MemoryWorld, clock: FakeClock, model: ScriptedModel, executor: RunExecutor
 ) -> None:
+    for _ in range(8):
+        world.post_human("usr_alice", "we should look at the plan")
     ask(world)
     world.post_agent("an earlier point")
     clock.advance(8)

@@ -43,8 +43,8 @@ class PolicyConfig:
     fold_threshold_tokens: int = 12_000
     fold_fraction: float = 0.8
     summary_max_tokens: int = 1_000
-    decider_max_input_tokens: int = 4_000
-    writer_max_input_tokens: int = 12_000
+    decider_max_input_tokens: int = 700
+    writer_max_input_tokens: int = 2_500
     decider_max_output_tokens: int = 50
     writer_max_output_tokens: int = 300
 

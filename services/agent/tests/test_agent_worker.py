@@ -206,6 +206,8 @@ async def test_cooldown_skip_is_rechecked_when_the_cooldown_ends(
     await set_agent_config(engine, {**FAST, "cooldown_s": 1.5})
     model = ScriptedModel()
     rig = make_rig(engine, redis_client, redis_settings, model)
+    for i in range(8):  # enough history that one agent message is a small share (D-021)
+        await rig.say("usr_alice", f"earlier note {i}", trigger=False)
     await rig.say("usr_alice", "first", trigger=False)
     await rig.backend.insert(SID, "agent", AGENT_ID, "an earlier point", trigger=False)
     async with running(rig.worker):

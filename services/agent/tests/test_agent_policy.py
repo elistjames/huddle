@@ -51,6 +51,15 @@ def gate(
     )
 
 
+def pad(k: int = 12) -> list[ChatMessage]:
+    """Old human history (negative seqs, an hour earlier) so one agent message is a small share
+    of the window: the gate now checks the share *after* speaking (D-021)."""
+    return [
+        msg(-k + i, "usr_alice" if i % 2 else "usr_bob", "x", at=T0 - timedelta(hours=1))
+        for i in range(k)
+    ]
+
+
 def humans(
     start: int, count: int, who: str = "usr_alice", body: str = "we should ship it"
 ) -> list[ChatMessage]:
@@ -134,6 +143,7 @@ def test_mention_does_not_bypass_consecutive_cap() -> None:
 def test_cooldown_20s_since_last_agent_message() -> None:
     at = T0
     recent = [
+        *pad(),
         msg(1, "usr_alice", at=at),
         msg(2, "agent", "a point", at=at + timedelta(seconds=1)),
         msg(3, "usr_bob", "ok then", at=at + timedelta(seconds=5)),
@@ -165,17 +175,18 @@ def _unengaged_block(start: int, at: datetime) -> list[ChatMessage]:
 
 
 def test_cooldown_doubles_after_unengaged_agent_messages_up_to_5_min() -> None:
+    # n=6: the agent's share (1/5 = 0.2) is above its fair share 1/6, so the doubling applies.
     recent = [msg(0, "usr_alice", at=T0), *_unengaged_block(1, T0)]
-    r = gate(recent, now=T0 + timedelta(seconds=30))
+    r = gate(recent, n=6, now=T0 + timedelta(seconds=30))
     assert r.skip_reason == SkipReason.COOLDOWN and r.cooldown_s == 40
-    assert gate(recent, now=T0 + timedelta(seconds=41)).eligible
+    assert gate(recent, n=6, now=T0 + timedelta(seconds=41)).skip_reason != SkipReason.COOLDOWN
 
     recent2 = [
         msg(0, "usr_alice", at=T0),
         *_unengaged_block(1, T0),
         *_unengaged_block(5, T0 + timedelta(seconds=100)),
     ]
-    r2 = gate(recent2, now=T0 + timedelta(seconds=150))
+    r2 = gate(recent2, n=6, now=T0 + timedelta(seconds=150))
     assert r2.cooldown_s == 80
     assert effective_cooldown(10, P) == 300
 
@@ -222,19 +233,23 @@ def test_participation_share_cap_1_25_over_n() -> None:
     assert gate(recent, now=T0 + timedelta(seconds=5), n=2).eligible
 
 
-def test_share_at_exactly_the_cap_is_allowed() -> None:
-    # N=4 -> cap 1.25/4 = 0.3125 = 5/16.
+def test_share_is_checked_after_speaking() -> None:
+    # N=4 -> cap 1.25/4 = 0.3125. 4 agent messages in 15 -> speaking again makes 5/16 = 0.3125.
     old = T0 - timedelta(hours=1)
-    agent_at = {2, 5, 8, 11, 14}
+    agent_at = {2, 5, 8, 11}
     recent = [
         msg(s, "agent" if s in agent_at else "usr_alice", "x", at=old + timedelta(seconds=s))
         for s in range(1, 16)
     ]
     recent.append(msg(16, "usr_bob", "y", at=T0))
-    assert participation_share(recent, AGENT.id) == pytest.approx(0.3125)
-    assert gate(recent, n=4).eligible
+    assert participation_share(recent, AGENT.id) == pytest.approx(4 / 16)
+    assert gate(recent, n=4).eligible  # one more message would land exactly on the cap
     one_more = [*recent[:-2], msg(15, "agent", "x", at=old), msg(16, "usr_bob", "y", at=T0)]
-    assert gate(one_more, n=4).skip_reason == SkipReason.SHARE_CAP
+    assert gate(one_more, n=4).skip_reason == SkipReason.SHARE_CAP  # 6/17 > cap
+
+
+def test_agent_that_has_not_spoken_is_never_over_its_share() -> None:
+    assert gate([msg(1, "usr_alice", "what is the plan?")], n=10).eligible
 
 
 def test_mention_bypasses_share_cap() -> None:
@@ -266,9 +281,50 @@ def test_n_counts_agents_too() -> None:
     # 2 humans + 1 agent: N=3 (the snapshot counts active memberships including the agent).
     recent = [msg(1, "usr_alice"), msg(2, "agent", at=T0 - timedelta(hours=1)), msg(3, "usr_bob")]
     recent = sorted(recent, key=lambda m: m.seq)
-    r = gate(recent, n=3, now=T0 + timedelta(hours=1))
-    assert r.share == pytest.approx(1 / 3)
-    assert r.eligible  # 0.333 <= 1.25/3
+    r = gate([*pad(), *recent], n=3, now=T0 + timedelta(hours=1))
+    assert r.share == pytest.approx(1 / 15)
+    assert r.eligible  # (1+1)/16 <= 1.25/3
+
+
+def test_one_human_with_the_agent_bypasses_the_cooldown() -> None:
+    # N=2: everything the human says is addressed to the agent (D-021).
+    recent = [
+        *pad(),
+        msg(1, "usr_alice", at=T0),
+        msg(2, "agent", "a point", at=T0 + timedelta(seconds=1)),
+        msg(3, "usr_alice", "and the deadline?", at=T0 + timedelta(seconds=3)),
+    ]
+    assert gate(recent, n=2, now=T0 + timedelta(seconds=6)).eligible
+    assert gate(recent, n=3, now=T0 + timedelta(seconds=6)).skip_reason == SkipReason.COOLDOWN
+
+
+def test_reply_engaging_the_agents_last_message_bypasses_the_cooldown() -> None:
+    recent = [
+        *pad(),
+        msg(1, "usr_alice", at=T0),
+        msg(2, "agent", "consider the latency budget carefully", at=T0 + timedelta(seconds=1)),
+        msg(3, "usr_bob", "good call on the latency budget", at=T0 + timedelta(seconds=3)),
+    ]
+    assert gate(recent, n=3, now=T0 + timedelta(seconds=6)).eligible
+
+
+def test_below_fair_share_cooldown_does_not_double() -> None:
+    recent = [*pad(), msg(0, "usr_alice", at=T0), *_unengaged_block(1, T0)]
+    assert gate(recent, n=3, now=T0 + timedelta(seconds=30)).cooldown_s == 20  # share < 1/3
+    busy = [
+        *[msg(-40 + i, "agent", "x", at=T0 - timedelta(hours=1)) for i in range(0, 40, 4)],
+        *recent,
+    ]
+    assert gate(busy, n=3, now=T0 + timedelta(seconds=30)).cooldown_s > 20
+
+
+def test_trivial_batches_skip_the_decider() -> None:
+    for body in ["thanks", "agreed!", "hey everyone", "sounds good, thanks", "ok"]:
+        assert gate([msg(1, "usr_alice", body)], n=3).skip_reason == SkipReason.TRIVIAL, body
+    for body in ["thanks, but what about the budget?", "hey, can you look at the plan"]:
+        assert gate([msg(1, "usr_alice", body)], n=3).eligible, body
+    # A mention is never trivial.
+    assert gate([msg(1, "usr_alice", "thanks Huddle AI")], n=3).eligible
 
 
 # ---- nudge conditions -----------------------------------------------------------------------

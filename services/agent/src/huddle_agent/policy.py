@@ -36,6 +36,7 @@ class SkipReason(StrEnum):
     DECIDER_DECLINED = "decider_declined"
     CONVERSATION_CLOSED = "conversation_closed"
     COALESCED = "coalesced"
+    TRIVIAL = "trivial"
 
 
 # Skip reasons that mean the agent is inactive: its read cursor must not advance (D-020).
@@ -80,6 +81,22 @@ _STOPWORDS = frozenset(
 )
 
 
+_TRIVIAL_WORDS = frozenset(
+    "ok okay k sure yep yes yeah no nope cool nice lol haha thanks thank thx you got it sounds "
+    "good great perfect agreed same true right done hi hey hello yo morning night bye cya later "
+    "everyone all see ya evening welcome np".split()
+)
+
+
+def is_trivial(body: str | None) -> bool:
+    """A greeting or acknowledgement with nothing to add to: at most four words, all of them
+    from a small closed set, and not a question (D-021). Lets the gate skip the decider."""
+    if not body or "?" in body:
+        return False
+    words = _WORD.findall(body.lower())
+    return 0 < len(words) <= 4 and all(w in _TRIVIAL_WORDS for w in words)
+
+
 def mentions_agent(text: str | None, agent_name: str) -> bool:
     """True if the agent's name appears in `text` (case-insensitive, whole words).
 
@@ -98,7 +115,16 @@ def mentions_agent(text: str | None, agent_name: str) -> bool:
 def _content_words(text: str | None) -> set[str]:
     if not text:
         return set()
-    return {w for w in _WORD.findall(text.lower()) if len(w) >= 4 and w not in _STOPWORDS}
+    return {_stem(w) for w in _WORD.findall(text.lower()) if len(w) >= 4 and w not in _STOPWORDS}
+
+
+def _stem(word: str) -> str:
+    """Strip the commonest inflections so "numbers" matches "number" and "checked" matches
+    "check". Deliberately crude: it only has to make engagement detection less brittle."""
+    for suffix in ("ing", "ed", "es", "s"):
+        if word.endswith(suffix) and len(word) - len(suffix) >= 4:
+            return word[: -len(suffix)]
+    return word
 
 
 def is_engaged(agent_msg: ChatMessage, following: Sequence[ChatMessage], agent_name: str) -> bool:
@@ -151,6 +177,16 @@ def participation_share(recent: Sequence[ChatMessage], agent_id: str) -> float:
     return mine / len(text)
 
 
+def share_after_speaking(recent: Sequence[ChatMessage], agent_id: str) -> float:
+    """The agent's share over the window if it posted one more message now (D-021). Checking
+    the share before speaking lets every message overshoot the cap by up to one message."""
+    text = [m for m in recent if m.is_text]
+    mine = sum(1 for m in text if m.sender_type == SenderType.AGENT and m.sender_id == agent_id)
+    if mine == 0:
+        return 0.0  # an agent that has not spoken in the window is never over its share
+    return (mine + 1) / (len(text) + 1)
+
+
 def trailing_agent_messages(recent: Sequence[ChatMessage]) -> int:
     n = 0
     for m in reversed([m for m in recent if m.is_text]):
@@ -174,6 +210,14 @@ def _mentioned_since_last_agent_message(
         if m.is_human and mentions_agent(m.body, agent_name):
             return True
     return False
+
+
+def _human_replied_to(
+    recent: Sequence[ChatMessage], agent_msg: ChatMessage, agent_name: str
+) -> bool:
+    """The newest human message directly follows `agent_msg` and engages with it."""
+    after = [m for m in recent if m.seq > agent_msg.seq]
+    return bool(after) and after[-1].is_human and is_engaged(agent_msg, after[-1:], agent_name)
 
 
 # ---- the gate -------------------------------------------------------------------------------
@@ -210,6 +254,12 @@ def evaluate_gate(
     if not humans or humans[-1].seq <= snap.last_evaluated_seq:
         return _skip(SkipReason.ALREADY_EVALUATED)
 
+    # D-021: a batch of only greetings/acknowledgements is not worth a decider call.
+    fresh = [m for m in humans if m.seq > snap.last_evaluated_seq]
+    if fresh and all(is_trivial(m.body) for m in fresh):
+        if not any(mentions_agent(m.body, snap.agent.name) for m in fresh):
+            return _skip(SkipReason.TRIVIAL)
+
     # Never two agent messages without a human in between; mentions do not bypass this.
     if trailing_agent_messages(recent) >= policy.max_consecutive_agent_messages:
         return _skip(SkipReason.CONSECUTIVE)
@@ -219,13 +269,22 @@ def evaluate_gate(
     share = participation_share(recent, agent.id)
     n = max(snap.active_participants, 1)
     streak = unengaged_streak(recent, agent.id, agent.name, policy.engagement_window)
-    cooldown = effective_cooldown(streak, policy)
+    # D-021: cooldown doubling for unengaged messages only applies once the agent has its fair
+    # share (1/N). Below it, only the base cooldown applies; otherwise the doubling rule and the
+    # 1/N rule (D-006) fight and a quiet chat starves the agent. The share cap still bounds it.
+    cooldown = effective_cooldown(0 if share < 1 / n else streak, policy)
 
     if not mentioned:
         last = snap.last_agent_message
-        if last is not None and now - last.created_at < timedelta(seconds=cooldown):
+        # D-021: a human reply that engages the agent's last message is aimed at the agent, like
+        # a direct mention, so it is answered without waiting out the cooldown. The share cap
+        # and the consecutive-message cap still apply.
+        replied = last is not None and _human_replied_to(recent, last, agent.name)
+        # D-021: with one human and the agent, everything the human says is addressed to it.
+        replied = replied or n <= 2
+        if last is not None and not replied and now - last.created_at < timedelta(seconds=cooldown):
             return _skip(SkipReason.COOLDOWN, share=share, cooldown_s=cooldown)
-        if share > policy.share_cap_factor / n:
+        if share_after_speaking(recent, agent.id) > policy.share_cap_factor / n:
             return _skip(SkipReason.SHARE_CAP, share=share, cooldown_s=cooldown)
 
     return GateResult(

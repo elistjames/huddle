@@ -435,20 +435,35 @@ async def eval_nudges(n: int = 100, seed: int = 47) -> dict[str, Any]:
 # ---- 5. cost (informational): a standard 500-message session ------------------------------
 
 
-async def eval_cost(messages: int = 500, seed: int = 59) -> dict[str, Any]:
+async def _cost_run(humans_n: int, seed: int) -> tuple[Sim, int]:
     rng = random.Random(seed)
     sim = Sim(2)  # N = 3, default 500k-token fixed window
     ids = [h[0] for h in humans(2)]
     t = 5.0
-    for _ in range(messages):
+    for _ in range(humans_n):
         sim.at(t, ids[rng.randrange(2)], _human_line(rng))
         t += rng.expovariate(1 / 40)
     await sim.run()
+    total = sum(1 for m in sim.world.messages[sim.world.session_id] if m.is_text)
+    return sim, total
+
+
+async def eval_cost(messages: int = 500, seed: int = 59) -> dict[str, Any]:
+    """A standard 500-message session (Deep Dive §11): 500 messages in total, humans and agent
+    together, so the number of human messages is solved for."""
+    humans_n = messages
+    sim, total = await _cost_run(humans_n, seed)
+    for _ in range(5):
+        if abs(total - messages) <= 5:
+            break
+        humans_n = max(1, round(humans_n * messages / total))
+        sim, total = await _cost_run(humans_n, seed)
     used = sum(u[2] for u in sim.world.usage)
     runs = list(sim.world.runs.values())
     resting_runs = sum(1 for r in runs if r.skip_reason == "resting")
     return {
-        "human_messages": messages,
+        "total_messages": total,
+        "human_messages": humans_n,
         "tokens_used": used,
         "capacity_tokens": sim.world.capacity_tokens,
         "within_one_window": used <= sim.world.capacity_tokens,

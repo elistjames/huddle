@@ -215,11 +215,11 @@ Only if the decider says yes does the writer model compose the message.
 | Rule | Policy *(tunable)* |
 |---|---|
 | Relevance | The decider speaks only when it can add something new: a missing fact, a different angle, a summary of a tangle, or an answer to a question nobody has answered. |
-| Cooldown | At least 20 s since the agent's last message. |
-| Participation share | Over the last 30 messages, the agent may speak only if its share is at most 1.25 × 1/N. If its share falls below 0.5 × 1/N, the decider is nudged toward speaking. N counts all active participants, including agents. This rule enforces the PRD's primary metric. |
+| Cooldown | At least 20 s since the agent's last message. Bypassed (D-021) when a human reply engages the agent's last message, and when the only human in the session is the one talking to it (N = 2). |
+| Participation share | Over the last 30 messages, the agent may speak only if its share **including the message it is about to post** is at most 1.25 × 1/N (an agent that has not spoken in the window is never over).  If its share falls below 0.5 × 1/N, the decider is nudged toward speaking. N counts all active participants, including agents. This rule enforces the PRD's primary metric. |
 | Conversation interruption | The agent never speaks during a burst of messages; the debounce handles this. Before committing, a stale check runs (see the run lifecycle). |
 | Direct mentions | @mentions are out of scope. If the agent's name appears in a message, or a question is clearly aimed at it, the cooldown and share cap are bypassed. The consecutive-message cap still applies. |
-| Silence after low-value turns | The decider skips greetings, acknowledgements and small talk between humans. If one of the agent's messages gets no human engagement within the next 3 messages, its cooldown doubles, up to a 5 min cap. |
+| Silence after low-value turns | The decider skips greetings, acknowledgements and small talk between humans; a batch of only short greetings or acknowledgements (at most four words from a closed set, no question, no mention) is skipped by the gate without a decider call (D-021). If one of the agent's messages gets no human engagement within the next 3 messages, its cooldown doubles, up to a 5 min cap; the doubling applies only while the agent's share is at least 1/N (D-021). |
 | Maximum consecutive agent messages | 1. The agent never posts twice without a human message in between. This includes nudges. |
 | Session inactivity (re-engagement nudge) | After a lull with no human messages, the agent is **encouraged** to post one message that draws people back. The lull is `nudge_delay`, which defaults to 20 min and is configurable from 10 to 30 min. Conditions:<br>  • **Once per lull.** Only a new human message re-arms the nudge.<br>  • **Only if the conversation is still open,** as judged by the decider: an unanswered question, a pending decision, or an idea nobody followed up on. Signs of closure ("sounds good", "thanks, bye", a decision that was made) cancel the nudge.<br>  • **Not if the agent was the last speaker.**<br>  • **Not if the budget can't cover a turn.** |
 | Length | The prompt asks for at most 3 sentences or about 600 characters. Validation rejects anything over 1,000 characters, regenerates once, then discards. |
@@ -251,8 +251,9 @@ triggered → eligible → context-built → generating → validated → commit
 	- Decider p95 under 3 s.
 	- Trigger-to-message p95 under 20 s, measured after the debounce.
 - **Token budget per turn:**
-	- Decider: at most 4k tokens in and 50 out.
-	- Writer: at most 12k tokens in and 300 out.
+	- Decider: at most 4k tokens in and 50 out. The default input cap is **700** tokens (D-021).
+	- Writer: at most 12k tokens in and 300 out. The default input cap is **2.5k** tokens (D-021).
+	- "One full turn" for the resting threshold is the defaults' sum (700 + 50 + 2,500 + 300 tokens).
 - **Token budget per session:** a **fixed-window token budget** for each session and agent, measured in **tokens, never dollars** (D-016, D-019). The models run locally at no cost, so the budget's job is to keep the local machine responsive and the agent's behavior predictable. The default capacity is 500k tokens per 24 h window *(tunable)*. Windows are fixed and aligned (window k covers `[k*window_seconds, (k+1)*window_seconds)` from the UTC epoch); at each window boundary usage resets to zero. It does not refill gradually and is not a sliding window. Every model call (decider, writer and summarizer) adds its tokens to `used_tokens`.
 	- **Resting:** when the tokens left in the current window are fewer than one full turn, the agent is `resting` until the window ends.
 	- **Transparency:** users always see the budget, **as a percentage used**, not raw tokens.
@@ -580,6 +581,7 @@ All copy and visuals follow [Design System](../../design/README.md), which is th
 | D-017 | ✓✓ fires when any one other human has received the message | Wait for every member | Offline members don't hold the sender's receipt back | Owner | 2026-09-29 | Accepted |
 | D-018 | Push and email notifications are out of MVP scope | Ship them with the nudge | Keeps the MVP small; nudges reach people who have the app open | Owner | 2026-09-29 | Accepted |
 | D-019 | The budget is a fixed-window token budget shown to users as a percentage used, with a refill time at the window end. Supersedes the continuous-refill bucket wording in D-014 and the "312k of 500k tokens" display. | Continuous or sliding refill; showing raw tokens | Simpler to implement, explain and test; the UI needs only a percentage | Owner | 2026-09-30 | Accepted |
+| D-021 | Tuning to meet the §11 evals: share is checked after speaking; cooldown doubling only at or above fair share; cooldown bypass for replies that engage the agent and in 1:1 chats; gate-level skip of trivial batches; smaller default prompt caps (decider 700, writer 2.5k tokens) and a matching resting threshold; engagement matching uses light stemming. "500-message session" means 500 messages in total, humans and agent. | Leave the evals failing; raise the budget capacity | Meets N = 2-6 within ±30% and a 500-message session in one window without resting, using only *(tunable)* values and clarifications | Owner | 2026-09-30 | Accepted |
 | D-020 | A paused, resting or away agent does not advance its read cursor, so messages sent meanwhile stay at ✓✓ until it catches up. The AI-state, error-line and system-note wording proposed in the design system is final for the MVP. | Advance the cursor while inactive | Keeps the amber tick honest: it means the agent read the message | Owner | 2026-09-30 | Accepted |
 ## Open Questions
 - None open. Q1 → D-017, Q2 → D-015, Q3 → D-016, Q4 → D-018 (all resolved 2026-09-29).
