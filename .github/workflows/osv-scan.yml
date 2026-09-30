@@ -1,7 +1,6 @@
 name: OSV scan
 on:
   pull_request:
-    paths: [uv.lock, "apps/web/package-lock.json"]
   schedule:
     - cron: "43 5 * * 1"
 permissions:
