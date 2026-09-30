@@ -151,6 +151,15 @@ def participation_share(recent: Sequence[ChatMessage], agent_id: str) -> float:
     return mine / len(text)
 
 
+def trailing_agent_messages(recent: Sequence[ChatMessage]) -> int:
+    n = 0
+    for m in reversed([m for m in recent if m.is_text]):
+        if m.sender_type != SenderType.AGENT:
+            break
+        n += 1
+    return n
+
+
 def agent_spoke_last(recent: Sequence[ChatMessage]) -> bool:
     text = [m for m in recent if m.is_text]
     return bool(text) and text[-1].sender_type == SenderType.AGENT
@@ -202,7 +211,7 @@ def evaluate_gate(
         return _skip(SkipReason.ALREADY_EVALUATED)
 
     # Never two agent messages without a human in between; mentions do not bypass this.
-    if agent_spoke_last(recent):
+    if trailing_agent_messages(recent) >= policy.max_consecutive_agent_messages:
         return _skip(SkipReason.CONSECUTIVE)
 
     agent = snap.agent

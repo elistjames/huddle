@@ -280,9 +280,6 @@ class MemoryStore:
     async def latest_human_seq(self, session_id: str) -> int:
         return self._last_human_seq(session_id)
 
-    async def latest_seq(self, session_id: str) -> int:
-        return self.w.sessions[session_id].last_seq
-
     async def insert_summary(self, session_id: str, agent_id: str, summary: Summary) -> None:
         self.w.summaries.append((session_id, agent_id, summary))
 

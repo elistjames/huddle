@@ -116,6 +116,15 @@ def test_never_two_agent_messages_in_a_row() -> None:
     assert gate(recent).skip_reason == SkipReason.CONSECUTIVE
 
 
+def test_consecutive_cap_is_configurable() -> None:
+    old = T0 - timedelta(hours=1)
+    recent = [msg(1, "usr_alice", "Huddle AI, what now?", at=old), msg(2, "agent", "x", at=old)]
+    p2 = PolicyConfig.from_json({"max_consecutive_agent_messages": 2})
+    assert gate(recent, policy=p2, now=T0, n=1).eligible  # n=1: keep the share cap out of it
+    recent.append(msg(3, "agent", "y", at=old))
+    assert gate(recent, policy=p2, now=T0, n=1).skip_reason == SkipReason.CONSECUTIVE
+
+
 def test_mention_does_not_bypass_consecutive_cap() -> None:
     # The human mention came before the agent's own last message.
     recent = [msg(1, "usr_alice", "Huddle AI, thoughts?"), msg(2, "agent", "Sure: ...")]

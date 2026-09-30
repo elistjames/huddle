@@ -33,14 +33,6 @@ LIVE_STATUSES: tuple[RunStatus, ...] = (
     RunStatus.GENERATING,
     RunStatus.VALIDATED,
 )
-TERMINAL_STATUSES: tuple[RunStatus, ...] = (
-    RunStatus.SKIPPED,
-    RunStatus.OBSERVED,
-    RunStatus.CANCELLED,
-    RunStatus.SUPERSEDED,
-    RunStatus.TIMED_OUT,
-    RunStatus.FAILED,
-)
 
 
 class TriggerKind(StrEnum):

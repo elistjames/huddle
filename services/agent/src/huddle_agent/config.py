@@ -40,7 +40,6 @@ class PolicyConfig:
     max_chars: int = 1000
     decider_timeout_s: float = 10.0
     writer_timeout_s: float = 45.0
-    recent_window_tokens: int = 6_000
     fold_threshold_tokens: int = 12_000
     fold_fraction: float = 0.8
     summary_max_tokens: int = 1_000

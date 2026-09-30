@@ -85,7 +85,6 @@ class ContextWindow:
     messages: list[ChatMessage]  # verbatim window, oldest first
     context_seq: int  # last seq read into the context (staleness check, read ack)
     names: dict[str, str] = field(default_factory=dict[str, str])
-    summarizer_tokens: tuple[int, int] = (0, 0)  # (in, out) spent folding during the build
 
 
 # ---- role mapping and untrusted-content wrapping -------------------------------------------

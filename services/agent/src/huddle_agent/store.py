@@ -144,8 +144,6 @@ class Store(Protocol):
 
     async def latest_human_seq(self, session_id: str) -> int: ...
 
-    async def latest_seq(self, session_id: str) -> int: ...
-
     async def insert_summary(self, session_id: str, agent_id: str, summary: Summary) -> None: ...
 
     async def find_live_run(self, session_id: str, agent_id: str) -> RunRecord | None: ...
@@ -521,15 +519,6 @@ class PostgresStore:
     async def latest_human_seq(self, session_id: str) -> int:
         async with self._engine.connect() as conn:
             return await self._last_human_seq(conn, session_id)
-
-    async def latest_seq(self, session_id: str) -> int:
-        async with self._engine.connect() as conn:
-            seq = (
-                await conn.execute(
-                    sa.select(chat_sessions.c.last_seq).where(chat_sessions.c.id == session_id)
-                )
-            ).scalar_one_or_none()
-        return int(seq or 0)
 
     async def insert_summary(self, session_id: str, agent_id: str, summary: Summary) -> None:
         values: dict[str, Any] = {

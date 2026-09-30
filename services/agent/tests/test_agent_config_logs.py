@@ -53,7 +53,11 @@ def test_policy_config_defaults_match_spec() -> None:
     assert (p.share_window, p.share_cap_factor, p.share_nudge_factor) == (30, 1.25, 0.5)
     assert (p.nudge_delay_s, p.max_chars, p.target_chars) == (1200, 1000, 600)
     assert (p.decider_timeout_s, p.writer_timeout_s) == (10, 45)
-    assert (p.recent_window_tokens, p.fold_threshold_tokens, p.fold_fraction) == (6000, 12000, 0.8)
+    assert (p.fold_threshold_tokens, p.fold_fraction, p.max_consecutive_agent_messages) == (
+        12000,
+        0.8,
+        1,
+    )
 
 
 def test_policy_config_from_agents_config_is_defensive() -> None:
