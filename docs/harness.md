@@ -36,6 +36,6 @@ OpenSSF Scorecard badge, SBOM/signing/provenance, container scanning, fuzzing be
 
 ## Platform settings to apply by hand (cannot be set from code)
 
-- Protect `main`: no direct pushes, no force-push/deletion, `enforce_admins`, require the `test`, `web`, `TruffleHog`, `OSV-Scanner` checks; add `CodeQL` once stable. Keep `zizmor` non-required (path-conditional).
+- **Protect `master`:** import `.github/rulesets/master-protection.json` (Settings → Rules → Rulesets → New ruleset → Import a ruleset). It blocks deletion and force-push, requires a pull request (0 approvals, since this is a solo repo; raise it when there are more people) with review threads resolved, and requires the `test`, `web`, `TruffleHog` and `OSV-Scanner` checks. It has no bypass actors, so it applies to admins too. Every required check must run on every PR (a required check that is skipped by a `paths:` filter blocks merging), so OSV-Scanner has no path filter. Add `CodeQL` once the repo is public and it has a stable history; keep `zizmor` non-required (it only runs when `.github/` changes).
 - Enable secret scanning with push protection, private vulnerability reporting, Dependabot security updates.
 - Third-party actions are pinned to commit SHAs with the version in a trailing comment; Dependabot (github-actions ecosystem, 7-day cooldown) maintains the pins, and zizmor fails the build on an unpinned action.
