@@ -129,7 +129,7 @@ _OPEN = re.compile(
 _TANGLE = re.compile(r"\b(but|disagree|actually|no,|wait|however|i thought)\b", re.IGNORECASE)
 
 
-def _is_low_value(body: str) -> bool:
+def is_low_value(body: str) -> bool:
     return bool(_GREETING.search(body) or _ACK.match(body) or _SMALLTALK_Q.search(body))
 
 
@@ -157,7 +157,7 @@ def heuristic_speak(
     last = new[-1].body or ""
     if any(mentions_agent(m.body, agent_name) for m in new[-3:]):
         return True, "addressed by name"
-    if _is_low_value(last):
+    if is_low_value(last):
         return False, "small talk or acknowledgement"
     if "?" in last:
         return True, "unanswered question"

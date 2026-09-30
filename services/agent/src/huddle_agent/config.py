@@ -26,6 +26,9 @@ class PolicyConfig:
     debounce_cap_s: float = 8.0
     cooldown_s: float = 20.0
     cooldown_max_s: float = 300.0
+    # A trigger skipped only because of the cooldown is re-evaluated once when the cooldown
+    # ends, instead of being dropped until the next human message (spec is silent; see report).
+    defer_after_cooldown: bool = True
     engagement_window: int = 3  # an agent message is unengaged if the next 3 messages ignore it
     share_window: int = 30
     share_cap_factor: float = 1.25

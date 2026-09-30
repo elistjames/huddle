@@ -6,6 +6,8 @@
 * Coalesces triggers per session: evaluate after 3 s of quiet, capped at 8 s. Triggers arriving
   during a run mark the session dirty; it is re-evaluated once when the run ends.
 * Skips stale triggers: when queue lag exceeds 30 s, only the nudge timer is updated.
+* A batch skipped only by the cooldown is re-evaluated once when the cooldown ends
+  (`defer_after_cooldown`), rather than waiting for the next human message.
 * Re-engagement nudges: each human message resets `agent:timers[session] = message time +
   nudge_delay`; a due timer is claimed with ZREM (exactly one worker wins) and runs one nudge
   evaluation. Timers are re-armed from `last_human_message_at` on startup and periodically, so a
@@ -58,6 +60,7 @@ class SessionSlot:
     retry_at: float | None = None
     busy_retries: int = 0
     nudge_pending: bool = False
+    deferred_at: float | None = None  # monotonic time to re-check a cooldown-skipped trigger
     force: bool = False  # evaluate without waiting for the debounce (recovery)
 
     def add(self, entry_id: str, now: float, trace_id: str | None, seq: int) -> None:
@@ -306,6 +309,8 @@ class Worker:
             return False
         if slot.nudge_pending:
             return True
+        if not slot.entry_ids and slot.deferred_at is not None:
+            return now >= slot.deferred_at  # cooldown ended: re-evaluate the skipped trigger
         if not slot.entry_ids or slot.first_at is None or slot.last_at is None:
             return False
         if slot.force:
@@ -339,6 +344,7 @@ class Worker:
             slot.in_flight = ids
             slot.entry_ids, slot.first_at, slot.last_at = [], None, None
             slot.trace_id, slot.max_seq, slot.force = None, 0, False
+            slot.deferred_at = None  # this evaluation covers any deferred one
         slot.nudge_pending = False if kind == TriggerKind.NUDGE else slot.nudge_pending
         outcome: RunOutcome | None = None
         try:
@@ -353,7 +359,9 @@ class Worker:
         if retry:
             # Busy (another live run), crashed-run takeover, or an error: keep the batch
             # (it stays pending in the stream) and retry with backoff.
-            if kind == TriggerKind.MESSAGE:
+            if kind == TriggerKind.MESSAGE and not ids:
+                slot.deferred_at = self.clock.monotonic()  # a deferred re-check; retry it
+            elif kind == TriggerKind.MESSAGE:
                 slot.entry_ids = ids + slot.entry_ids
                 slot.first_at = first_at if first_at is not None else self.clock.monotonic()
                 slot.last_at = slot.last_at or slot.first_at
@@ -372,6 +380,8 @@ class Worker:
         if kind == TriggerKind.MESSAGE:
             await self._ack(ids)
             slot.in_flight = []
+            if outcome is not None and outcome.retry_after_s is not None:
+                slot.deferred_at = self.clock.monotonic() + outcome.retry_after_s + 0.05
         elif outcome is not None and outcome.skip_reason == SkipReason.LULL_NOT_OVER.value:
             await self.rearm_timers()
         return outcome

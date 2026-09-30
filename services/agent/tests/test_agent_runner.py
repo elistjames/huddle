@@ -85,6 +85,27 @@ async def test_decider_declines(
     assert world.usage and world.usage[0][2] > 0  # decider tokens debited
 
 
+async def test_cooldown_skip_says_when_to_retry(
+    world: MemoryWorld, clock: FakeClock, model: ScriptedModel, executor: RunExecutor
+) -> None:
+    ask(world)
+    world.post_agent("an earlier point")
+    clock.advance(8)
+    ask(world, "and what about the budget?")
+    out = await executor.execute(world.session_id)
+    assert out.skip_reason == "cooldown"
+    assert out.retry_after_s == pytest.approx(12.0)
+    clock.advance(12.1)  # the deferred re-check is not deduped as "already evaluated"
+    model.script(Stage.DECIDE, False)
+    again = await executor.execute(world.session_id)
+    assert again.skip_reason == "decider_declined"
+
+    world.set_agent_config(defer_after_cooldown=False)
+    world.post_agent("x")
+    ask(world, "one more?")
+    assert (await executor.execute(world.session_id)).retry_after_s is None
+
+
 async def test_redelivered_trigger_is_not_reevaluated(
     world: MemoryWorld, model: ScriptedModel, executor: RunExecutor
 ) -> None:

@@ -86,6 +86,7 @@ class RunOutcome:
     error_code: str | None = None
     message_id: str | None = None
     seq: int | None = None
+    retry_after_s: float | None = None  # cooldown skip: when the agent may speak again
 
 
 class _LeaseLost(Exception):
@@ -458,7 +459,7 @@ class RunExecutor:
                 await self.presence.set(sid, AgentState.FOLLOWING)
             await self._ack(sid, rc.agent.id, snap.session.last_seq, trace_id=rc.trace_id)
         rc.run.context_seq = snap.session.last_seq
-        return await self._finish(
+        out = await self._finish(
             rc,
             RunStatus.SKIPPED,
             skip_reason=reason,
@@ -466,6 +467,12 @@ class RunExecutor:
             share=round(gate.share, 3),
             cooldown_s=gate.cooldown_s,
         )
+        last = snap.last_agent_message
+        deferrable = gate.skip_reason == SkipReason.COOLDOWN and rc.policy.defer_after_cooldown
+        if deferrable and last is not None:
+            elapsed = (self._clock.now() - last.created_at).total_seconds()
+            out.retry_after_s = max(gate.cooldown_s - elapsed, 0.0)
+        return out
 
     def _cancel_reason(self, fresh: GateSnapshot | None) -> str | None:
         """A run is cancelled if the agent is paused or removed, or the session closed."""

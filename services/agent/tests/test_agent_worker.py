@@ -200,6 +200,25 @@ async def test_triggers_during_a_run_set_dirty_and_reevaluate_once(
     assert seen == [1, 3]  # exactly one re-evaluation, against the latest seq
 
 
+async def test_cooldown_skip_is_rechecked_when_the_cooldown_ends(
+    engine: AsyncEngine, redis_client: Redis, redis_settings: Settings
+) -> None:
+    await set_agent_config(engine, {**FAST, "cooldown_s": 1.5})
+    model = ScriptedModel()
+    rig = make_rig(engine, redis_client, redis_settings, model)
+    await rig.say("usr_alice", "first", trigger=False)
+    await rig.backend.insert(SID, "agent", AGENT_ID, "an earlier point", trigger=False)
+    async with running(rig.worker):
+        await rig.say("usr_bob", "a follow-up question?")
+
+        async def decided() -> bool:
+            return any(c.stage == Stage.DECIDE for c in model.calls)
+
+        await wait_for(decided)
+    reasons = [r["skip_reason"] for r in await rig.run_rows()]
+    assert "cooldown" in reasons and "decider_declined" in reasons
+
+
 async def test_stale_trigger_is_skipped_but_still_resets_the_nudge_timer(
     engine: AsyncEngine, redis_client: Redis, redis_settings: Settings
 ) -> None:

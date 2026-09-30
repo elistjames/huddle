@@ -10,7 +10,7 @@ Update this file when you add a package or top-level directory (`scripts/check_i
 | `libs/contracts` | Shared wire contracts: WS events, internal HTTP models, Redis keys, fixed-window budget math |
 | `services/gateway` | WebSocket gateway (FastAPI). Own deployable. |
 | `services/chat` | Chat service: public REST, internal API, Postgres, fan-out, receipts, budget. Own deployable. |
-| `services/agent` | Agent orchestrator worker (LangChain + Ollama). Own deployable. |
+| `services/agent` | Agent orchestrator worker (LangChain + Ollama). Own deployable. Agent evals (Deep Dive §11, fake model, CI) in `services/agent/tests/evals`. |
 | `apps/web` | React 18 + Vite client built on `design/` |
 | `deploy/` | docker-compose (one container per service, simulating separate servers), env examples |
 | `scripts/` | `gate.sh` (merge gate), helpers |
