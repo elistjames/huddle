@@ -1,6 +1,6 @@
 # Build from the repo root: docker build -f services/chat/Dockerfile .
 FROM python:3.12-slim AS build
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /usr/local/bin/uv
+COPY --from=ghcr.io/astral-sh/uv:0.8.17 /uv /usr/local/bin/uv
 # Use the image's interpreter (the runtime stage has the same one); never download another.
 ENV UV_PYTHON_DOWNLOADS=never UV_LINK_MODE=copy UV_COMPILE_BYTECODE=1
 WORKDIR /app

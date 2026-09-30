@@ -1,6 +1,10 @@
 """End-to-end smoke: real chat service + gateway + Postgres + Redis (no agent, no Ollama).
 
 Usage: eval "$(scripts/dev-stores.sh)"; uv run python scripts/e2e_smoke.py
+
+External mode tests an already-running stack (for example `make up`, through the web container's
+nginx): HUDDLE_E2E_URL=http://localhost:8080 uv run python scripts/e2e_smoke.py
+The REST calls go to that URL and the WebSocket to its /ws. The session id defaults to ses_main.
 Two guests join, exchange messages over WebSockets, and we check seq order, the stored ack,
 receipt cursors and reconnect catch-up.
 """
@@ -31,6 +35,10 @@ ENV = {
     "HUDDLE_GATEWAY_ID": "gw-e2e",
     "HUDDLE_SESSION_ID": "ses_e2e",
 }
+EXTERNAL = os.environ.get("HUDDLE_E2E_URL", "").rstrip("/")
+API = EXTERNAL or "http://127.0.0.1:8001"
+WS_URL = (EXTERNAL.replace("http", "ws", 1) + "/ws") if EXTERNAL else "ws://127.0.0.1:8000/ws"
+SESSION = os.environ.get("HUDDLE_SESSION_ID", "ses_main") if EXTERNAL else "ses_e2e"
 
 
 def spawn(mod: str) -> subprocess.Popen[bytes]:
@@ -60,7 +68,7 @@ async def recv_until(ws: Any, pred: Any, wait_s: float = 5.0) -> dict[str, Any]:
 
 
 async def connect(token: str, sid: str, after: int = 0) -> Any:
-    ws = await websockets.connect("ws://127.0.0.1:8000/ws")
+    ws = await websockets.connect(WS_URL)
     await ws.send(
         json.dumps({"v": 1, "type": "auth", "token": token, "device_id": str(uuid.uuid4())})
     )
@@ -71,14 +79,15 @@ async def connect(token: str, sid: str, after: int = 0) -> Any:
 
 
 async def main() -> None:
-    procs = [spawn("huddle_chat"), spawn("huddle_gateway")]
+    procs = [] if EXTERNAL else [spawn("huddle_chat"), spawn("huddle_gateway")]
     try:
-        await wait_http("http://127.0.0.1:8001/healthz")
-        await wait_http("http://127.0.0.1:8000/healthz")
-        async with httpx.AsyncClient(base_url="http://127.0.0.1:8001") as c:
+        if not EXTERNAL:
+            await wait_http("http://127.0.0.1:8001/healthz")
+            await wait_http("http://127.0.0.1:8000/healthz")
+        async with httpx.AsyncClient(base_url=API) as c:
             a = (await c.post("/auth/guest", json={"display_name": "Maya"})).json()
             b = (await c.post("/auth/guest", json={"display_name": "Eli"})).json()
-            sid = "ses_e2e"
+            sid = SESSION
             det = (
                 await c.get(
                     f"/sessions/{sid}", headers={"Authorization": f"Bearer {a['access_token']}"}
@@ -120,7 +129,7 @@ async def main() -> None:
             )
         )
         await recv_until(wa, lambda f: f["type"] == "message.ack")
-        wb2 = await websockets.connect("ws://127.0.0.1:8000/ws")
+        wb2 = await websockets.connect(WS_URL)
         await wb2.send(
             json.dumps({"v": 1, "type": "auth", "token": b["access_token"], "device_id": "d2"})
         )
