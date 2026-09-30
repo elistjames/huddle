@@ -35,7 +35,7 @@ body { background: var(--paper); color: var(--ink); font-family: var(--font-sans
 }
 
 /* Dev-only mock controls (npm run dev:mock). */
-.mock-panel { position: fixed; left: var(--space-2); bottom: var(--space-2); z-index: 10; max-width: 260px; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--paper-sunken); border: 1px solid var(--line-strong); border-radius: var(--radius-md); font-size: 11px; line-height: 16px; color: var(--ink-muted); }
+.mock-panel { position: fixed; left: var(--space-2); bottom: var(--space-2); z-index: 10; max-width: 210px; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--paper-sunken); border: 1px solid var(--line-strong); border-radius: var(--radius-md); font-size: 11px; line-height: 16px; color: var(--ink-muted); }
 .mock-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
 .mock-panel button { font: inherit; color: var(--ink); background: var(--paper-raised); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 2px var(--space-2); cursor: pointer; }
 .mock-panel .mock-toggle { font-weight: 600; align-self: flex-start; }

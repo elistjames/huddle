@@ -121,10 +121,19 @@ describe("parseBody: plain text and code only", () => {
 
   it("splits fenced blocks with a language", () => {
     expect(parseBody("before\n```ts\nconst a = 1;\n```\nafter")).toEqual([
-      { kind: "text", text: "before\n" },
+      { kind: "text", text: "before" },
       { kind: "block", text: "const a = 1;", lang: "ts" },
-      { kind: "text", text: "\nafter" },
+      { kind: "text", text: "after" },
     ]);
+  });
+
+  it("keeps deliberate blank lines around a block, minus the fence's own newline", () => {
+    expect(parseBody("a\n\n```\nx\n```\n\nb")).toEqual([
+      { kind: "text", text: "a\n" },
+      { kind: "block", text: "x", lang: "" },
+      { kind: "text", text: "\nb" },
+    ]);
+    expect(parseBody("```\nonly\n```")).toEqual([{ kind: "block", text: "only", lang: "" }]);
   });
 
   it("leaves an unclosed fence as text", () => {

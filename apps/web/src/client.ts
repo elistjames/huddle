@@ -236,6 +236,9 @@ export class HuddleClient {
       ...(this.deps.pongTimeoutMs ? { pongTimeoutMs: this.deps.pongTimeoutMs } : {}),
     });
     this.conn.start();
+    // Title, people and the agent's state for the header while history loads; reloaded after
+    // every (re)subscribe, since events may have been missed while offline.
+    void this.loadSession();
   }
 
   private logout(): void {

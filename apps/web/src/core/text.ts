@@ -27,11 +27,13 @@ export function parseBody(body: string): Segment[] {
   let last = 0;
   for (const m of body.matchAll(FENCE)) {
     const at = m.index;
-    if (at > last) splitInline(body.slice(last, at), out);
+    // A block already starts and ends on its own line, so the newline beside a fence is dropped.
+    if (at > last) splitInline(body.slice(last, at).replace(/\n$/, ""), out);
     const code = (m[2] ?? "").replace(/\n$/, "");
     out.push({ kind: "block", text: code, lang: (m[1] ?? "").trim() });
     last = at + m[0].length;
+    if (body[last] === "\n") last++;
   }
   if (last < body.length) splitInline(body.slice(last), out);
-  return out;
+  return out.filter((s) => s.kind !== "text" || s.text !== "");
 }
