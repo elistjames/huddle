@@ -7,6 +7,7 @@ sequence-and-insert transaction -> after commit, fan-out and (human messages onl
 from __future__ import annotations
 
 import logging
+import re
 import time
 import uuid
 from collections.abc import AsyncGenerator, Callable
@@ -30,6 +31,7 @@ from huddle_chat.ids import new_id
 from huddle_chat.obs import TraceContext, current_trace, log_event, trace
 from huddle_chat.redis_ops import RedisOps
 from huddle_chat.schema import chat_sessions
+from huddle_contracts.agent_config import DEFAULT_AGENT_CONFIG
 from huddle_contracts.errors import ErrorCode
 from huddle_contracts.internal import (
     AckDeliveryRequest,
@@ -59,24 +61,6 @@ MAX_PAGE = 200  # Deep Dive §2/§6: replay pages of 200, limit <= 200
 MAX_DISPLAY_NAME = 40
 ACK_KINDS = ("delivered", "read")
 
-# Deep Dive §5 policy thresholds (tunable); stored in agents.config for the orchestrator.
-DEFAULT_AGENT_CONFIG: dict[str, Any] = {
-    "debounce_quiet_s": 3,
-    "debounce_cap_s": 8,
-    "cooldown_s": 20,
-    "cooldown_cap_s": 300,
-    "share_window_messages": 30,
-    "share_cap_factor": 1.25,
-    "share_floor_factor": 0.5,
-    "max_consecutive_agent_messages": 1,
-    "nudge_delay_s": 1200,
-    "nudge_delay_min_s": 600,
-    "nudge_delay_max_s": 1800,
-    "max_chars": AGENT_MAX_BODY_CHARS,
-    "decider_timeout_s": 10,
-    "writer_timeout_s": 45,
-}
-
 
 def utcnow() -> datetime:
     return datetime.now(UTC)
@@ -94,10 +78,27 @@ def effective_state(stored_status: str, reported: AgentState | None, resting: bo
     return AgentState.FOLLOWING
 
 
+_NAME_CHARS = re.compile(r"[\w .'\-]+")
+_FORBIDDEN_AGENT_NAMES = frozenset({"assistant", "bot", "ai assistant", "chatbot"})
+
+
 def normalize_name(value: str) -> str:
     name = " ".join(value.split())
     if not name or len(name) > MAX_DISPLAY_NAME:
         raise ChatError(ErrorCode.VALIDATION, f"name must be 1 to {MAX_DISPLAY_NAME} characters")
+    return name
+
+
+def normalize_agent_name(value: str) -> str:
+    """The agent's name goes into its system prompt, so it is limited to letters, digits, spaces
+    and . ' - (any member can rename it), and may not be a generic label (design voice rules)."""
+    name = normalize_name(value)
+    if _NAME_CHARS.fullmatch(name) is None:
+        raise ChatError(
+            ErrorCode.VALIDATION, "name may only contain letters, numbers, spaces and . ' -"
+        )
+    if name.casefold() in _FORBIDDEN_AGENT_NAMES:
+        raise ChatError(ErrorCode.VALIDATION, "pick a name that isn't a generic label")
     return name
 
 
@@ -521,6 +522,8 @@ class ChatService:
         agent = await store.session_agent(conn, session_id)
         if agent is None or agent.status != "active":
             return False
+        if await self._reported_state(session_id) == AgentState.AWAY:
+            return False  # D-020: an away agent has not read anything
         budget = await store.budget(conn, session_id, agent.id, now)
         return budget is None or not budget.resting
 
@@ -665,7 +668,7 @@ class ChatService:
             target = aliases.get(status)
             if target is None:
                 raise ChatError(ErrorCode.VALIDATION, "status must be paused or active")
-        new_name = normalize_name(name) if name is not None else None
+        new_name = normalize_agent_name(name) if name is not None else None
         if target is None and new_name is None:
             raise ChatError(ErrorCode.VALIDATION, "nothing to change")
         now = self.clock()

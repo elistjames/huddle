@@ -71,7 +71,8 @@ class PolicyConfig:
         cfg = replace(base, **updates)
         # nudge_delay is configurable from 10 to 30 min (Deep Dive §5).
         clamped = min(max(cfg.nudge_delay_s, NUDGE_DELAY_MIN_S), NUDGE_DELAY_MAX_S)
-        return replace(cfg, nudge_delay_s=clamped)
+        # Never two agent messages in a row (Deep Dive §5): a config value cannot loosen it.
+        return replace(cfg, nudge_delay_s=clamped, max_consecutive_agent_messages=1)
 
 
 def _env_bool(env: Mapping[str, str], name: str) -> bool:

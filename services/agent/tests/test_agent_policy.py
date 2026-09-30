@@ -128,7 +128,7 @@ def test_never_two_agent_messages_in_a_row() -> None:
 def test_consecutive_cap_is_configurable() -> None:
     old = T0 - timedelta(hours=1)
     recent = [msg(1, "usr_alice", "Huddle AI, what now?", at=old), msg(2, "agent", "x", at=old)]
-    p2 = PolicyConfig.from_json({"max_consecutive_agent_messages": 2})
+    p2 = PolicyConfig(max_consecutive_agent_messages=2)  # from_json clamps this to 1
     assert gate(recent, policy=p2, now=T0, n=1).eligible  # n=1: keep the share cap out of it
     recent.append(msg(3, "agent", "y", at=old))
     assert gate(recent, policy=p2, now=T0, n=1).skip_reason == SkipReason.CONSECUTIVE

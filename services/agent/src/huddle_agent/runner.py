@@ -59,7 +59,7 @@ from huddle_agent.models.base import (
     Stage,
     Usage,
 )
-from huddle_agent.policy import GateResult, SkipReason, evaluate_gate
+from huddle_agent.policy import GateResult, SkipReason, evaluate_gate, trailing_agent_messages
 from huddle_agent.presence import Presence
 from huddle_agent.store import Store
 from huddle_contracts.budget import is_resting
@@ -424,6 +424,13 @@ class RunExecutor:
                 }.get(cancel, AgentState.FOLLOWING)
                 await self.presence.set(sid, state)
                 return await self._finish(rc, RunStatus.CANCELLED, error_code=cancel)
+
+            # Another worker may have committed a reply since this run's first snapshot (workers
+            # have no per-session affinity). This run is the only live run for the session, so
+            # this fresh read is final: never post twice in a row (Deep Dive §5).
+            if trailing_agent_messages(fresh.recent) >= rc.policy.max_consecutive_agent_messages:
+                await self.presence.set(sid, AgentState.FOLLOWING)
+                return await self._finish(rc, RunStatus.CANCELLED, error_code="consecutive")
 
             latest_human = await self._store.latest_human_seq(sid)
             if latest_human > ctx.context_seq:

@@ -120,3 +120,28 @@ async def test_health_endpoint() -> None:
         r = await c.get("/healthz")
     assert r.status_code == 503 and r.json()["postgres"] is False
     assert r.json()["agents_disabled"] is True
+
+
+def test_seeded_agent_config_keys_are_all_policy_fields() -> None:
+    """The chat service seeds `agents.config` from libs/contracts; a key the agent does not know
+    is silently ignored, so it would stop being tunable."""
+    from dataclasses import fields
+
+    from huddle_agent.config import PolicyConfig
+    from huddle_contracts.agent_config import DEFAULT_AGENT_CONFIG
+
+    defaults = PolicyConfig()
+    names = {f.name for f in fields(PolicyConfig)}
+    for key, value in DEFAULT_AGENT_CONFIG.items():
+        assert key in names, key
+        assert getattr(defaults, key) == value, key
+    assert PolicyConfig.from_json(DEFAULT_AGENT_CONFIG) == defaults
+
+
+def test_max_consecutive_agent_messages_cannot_be_loosened() -> None:
+    from huddle_agent.config import PolicyConfig
+
+    assert (
+        PolicyConfig.from_json({"max_consecutive_agent_messages": 5}).max_consecutive_agent_messages
+        == 1
+    )

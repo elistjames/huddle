@@ -143,6 +143,7 @@ def to_langchain(
 
 def transcript(messages: Sequence[ChatMessage], names: Mapping[str, str], agent_name: str) -> str:
     """Plain labelled transcript for the summarizer (still wrapped as untrusted)."""
+    agent_name = safe_speaker(agent_name, "Huddle AI")
     lines: list[str] = []
     for m in messages:
         body = m.body if m.body is not None else REDACTED_PLACEHOLDER
@@ -159,6 +160,7 @@ def transcript(messages: Sequence[ChatMessage], names: Mapping[str, str], agent_
 
 
 def system_prompt(agent_name: str) -> str:
+    agent_name = safe_speaker(agent_name, "Huddle AI")
     return (
         f"You are {agent_name}, one participant in a small group chat between people. "
         f"Your name is {agent_name}; never call yourself an assistant or a bot. "
@@ -205,6 +207,7 @@ def decider_prompt(
     lull_minutes: int,
     policy: PolicyConfig,
 ) -> list[BaseMessage]:
+    agent_name = safe_speaker(agent_name, "Huddle AI")
     if kind == TriggerKind.NUDGE:
         task = (
             f"The chat has been quiet for about {lull_minutes} minutes. Decide whether the "
@@ -251,6 +254,7 @@ def writer_prompt(
     policy: PolicyConfig,
     too_long: bool = False,
 ) -> list[BaseMessage]:
+    agent_name = safe_speaker(agent_name, "Huddle AI")
     purpose = (
         "Write one short message that draws people back to the open thread of the conversation."
         if kind == TriggerKind.NUDGE
@@ -308,6 +312,7 @@ def recompress_prompt(summary: str, policy: PolicyConfig) -> list[BaseMessage]:
 
 
 def safety_prompt(text: str, agent_name: str) -> list[BaseMessage]:
+    agent_name = safe_speaker(agent_name, "Huddle AI")
     head = (
         f"You are a content safety checker for messages that {agent_name}, an AI participant, "
         "is about to post in a group chat. Unsafe means: hateful, harassing, sexual, violent or "

@@ -410,6 +410,7 @@ User-facing copy comes from the Huddle voice, for example "Didn't send. Retry". 
 	- Agent output passes a local safety check before commit, such as Llama Guard running in Ollama, so it costs nothing.
 	- Human messages are not moderated in v1, on the assumption of small trusted groups (D-011).
 - **Prompt injection handling:** the trust-boundary rules above, and a tool surface limited to `submit_message`.
+- **Agent name:** any member can rename the agent and the name enters its system prompt, so it is limited to 1-40 letters, digits, spaces and `. ' -`, and generic labels ("Assistant", "Bot") are rejected (independent review, 2026-09-30).
 - **Tool allowlists:** `submit_message` is the only tool.
 - **Audit logging:** `audit_events` records membership changes, agent configuration changes, and pause and resume.
 - **Data retention and deletion:** see §4.

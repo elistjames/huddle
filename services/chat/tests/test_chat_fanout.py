@@ -14,7 +14,7 @@ from huddle_chat.service import ChatService
 from huddle_contracts import redis_keys as keys
 from huddle_contracts.errors import ErrorCode
 from huddle_contracts.internal import AckDeliveryRequest, Sender, SubmitMessageRequest
-from huddle_contracts.models import SenderType
+from huddle_contracts.models import AgentState, SenderType
 
 pytestmark = pytest.mark.integration
 
@@ -163,6 +163,20 @@ async def test_paused_agent_does_not_advance_its_cursor(service: ChatService) ->
     assert not await ack(service, agent.id, seq, kind="read")
     assert (await service.membership(sid, agent.id)).last_delivered_seq == 0
     await service.patch_agent(sid, ana, status="active", name=None)
+    assert await ack(service, agent.id, seq, kind="read")
+
+
+async def test_away_agent_does_not_advance_its_cursor(service: ChatService) -> None:
+    """D-020: an `away` agent has read nothing, whichever worker reports the read ack."""
+    sid = service.settings.session_id
+    ana = (await service.guest_join("Ana")).user_id
+    async with service.tx() as conn:
+        agent = await store.session_agent(conn, sid)
+    assert agent is not None
+    seq = await send(service, ana)
+    await service.set_agent_status(sid, AgentState.AWAY)
+    assert not await ack(service, agent.id, seq, kind="read")
+    await service.set_agent_status(sid, AgentState.FOLLOWING)
     assert await ack(service, agent.id, seq, kind="read")
 
 
