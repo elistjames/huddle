@@ -25,3 +25,6 @@ Two humans chatting with Huddle AI got no reply, even to "Hey huddle are you the
 
 ## Follow-up QA (D-023)
 The agent asked Eli a question, Eli answered ("general suggestion"), and the agent stayed silent. It also wrote about Eli in the third person to Eli. Fix: answering a question the agent asked, or addressing it by name, now skips the decider (gate-level rule; "yes" counts as an answer), and the writer prompt speaks in the first person to people and builds on their answer. The deterministic part is tested; whether the real writer now reads well still needs another run on Ollama.
+
+## Real-model decider eval
+`make eval-decider` (see `docs/harness.md`) runs 35 labelled conversations through the real pipeline against Ollama and reports decider accuracy, precision and recall, per-case miss reasons, and latency. It has been run only against a stub server here (no Ollama in the build sandbox): the harness, the gate-decided cases and the output format are verified; the model numbers are not measured yet. Run it on your machine and use the misses to drive the next prompt change.

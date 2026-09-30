@@ -533,3 +533,27 @@ def test_an_old_agent_question_is_not_answered_by_later_chatter() -> None:
 
     assert answers_agent_question(recent, AGENT.id)  # a person replied within three messages
     assert not answers_agent_question([*pad(), msg(1, "agent", "Which venue?", at=T0)], AGENT.id)
+
+
+def test_courtesy_after_an_agent_question_is_not_an_answer() -> None:
+    for body in ["thanks", "sounds good", "great, thanks!", "perfect"]:
+        recent = [
+            *pad(),
+            msg(1, "agent", "How about the taco place?", at=T0),
+            msg(2, "usr_alice", body, at=T0 + timedelta(seconds=3)),
+        ]
+        r = gate(recent, n=3, now=T0 + timedelta(seconds=6))
+        assert not r.answering, body
+        assert r.skip_reason == SkipReason.TRIVIAL, body
+
+
+def test_answering_still_respects_the_share_cap() -> None:
+    old = T0 - timedelta(hours=1)
+    chat = [
+        msg(s, "agent" if s in {2, 4, 6, 8, 9} else "usr_alice", "x", at=old + timedelta(seconds=s))
+        for s in range(1, 10)
+    ]
+    chat[-1] = msg(9, "agent", "Which day works?", at=old + timedelta(seconds=9))
+    chat.append(msg(10, "usr_bob", "Friday", at=T0))
+    r = gate(chat, n=3, now=T0 + timedelta(seconds=3))
+    assert r.skip_reason == SkipReason.SHARE_CAP

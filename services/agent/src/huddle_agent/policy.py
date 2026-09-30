@@ -271,11 +271,25 @@ def _human_replied_to(
     return bool(after) and after[-1].is_human and is_engaged(agent_msg, after[-1:], agent_name)
 
 
-def answers_agent_question(recent: Sequence[ChatMessage], agent_id: str) -> bool:
-    """The agent's latest message asked a question and a person has posted since (D-023).
+_ACK_ONLY_WORDS = frozenset(
+    "thanks thank you thx ty cheers bye cya cool nice great perfect awesome amazing lol haha "
+    "np welcome agreed sounds good got it done same love that".split()
+)
 
-    Within the next three messages counts: a person who answers late is still answering, and the
-    agent is the only one who asked. The agent's last message must still be its latest one."""
+
+def _is_ack_only(body: str | None) -> bool:
+    """Politeness, not an answer: "thanks", "sounds good", "great". ("yes", "no" and "sure" are
+    answers, so they are not in this set.)"""
+    words = _WORD.findall((body or "").lower())
+    return bool(words) and all(w in _ACK_ONLY_WORDS for w in words)
+
+
+def answers_agent_question(recent: Sequence[ChatMessage], agent_id: str) -> bool:
+    """The agent's latest message asked a question and a person answered it (D-023).
+
+    Within the next three messages counts: a person who answers late is still answering. The
+    agent's last message must still be its latest one, and "thanks" or "sounds good" is a
+    courtesy, not an answer (otherwise every "How about tacos?" would start a ping-pong)."""
     last_index = None
     for i in range(len(recent) - 1, -1, -1):
         m = recent[i]
@@ -284,7 +298,8 @@ def answers_agent_question(recent: Sequence[ChatMessage], agent_id: str) -> bool
             break
     if last_index is None or "?" not in (recent[last_index].body or ""):
         return False
-    return any(m.is_human for m in recent[last_index + 1 : last_index + 4])
+    after = [m for m in recent[last_index + 1 : last_index + 4] if m.is_human]
+    return any(not _is_ack_only(m.body) for m in after)
 
 
 # ---- the gate -------------------------------------------------------------------------------
@@ -344,7 +359,7 @@ def evaluate_gate(
     # 1/N rule (D-006) fight and a quiet chat starves the agent. The share cap still bounds it.
     cooldown = effective_cooldown(0 if share < 1 / n else streak, policy)
 
-    if not (mentioned or answering):
+    if not mentioned:
         last = snap.last_agent_message
         # D-021: a human reply that engages the agent's last message is aimed at the agent, like
         # a direct mention, so it is answered without waiting out the cooldown. The share cap
@@ -352,6 +367,7 @@ def evaluate_gate(
         replied = last is not None and _human_replied_to(recent, last, agent.name)
         # D-021: with one human and the agent, everything the human says is addressed to it.
         replied = replied or n <= 2
+        replied = replied or answering  # answering the agent's question is a turn (D-023)
         if last is not None and not replied and now - last.created_at < timedelta(seconds=cooldown):
             return _skip(SkipReason.COOLDOWN, share=share, cooldown_s=cooldown)
         if (
