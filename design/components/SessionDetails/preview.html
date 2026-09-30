@@ -1,0 +1,19 @@
+<!-- @dsCard group="Session" height=560 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>SessionDetails preview</title>
+<style>body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-4);} .stack{display:flex;flex-direction:column;gap:var(--space-3);} .row{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;} .cap{font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;color:var(--ink-muted);margin:var(--space-2) 0 var(--space-1);} </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', { className: 'row', style: { alignItems: 'flex-start', gap: 'var(--space-6)' } },
+      h('div', { style: { border: '1px solid var(--line)', borderRadius: 'var(--radius-md)', overflow: 'hidden' } },
+        h(H.SessionDetails, { members: [{ name: 'Maya Chen' }, { name: 'Jordan Reyes' }, { name: 'Eli St. James', you: true }], agent: { name: 'Huddle AI', state: 'following', budget: { remaining: 312000, capacity: 500000 } }, onClose: function () {}, onPause: function () {}, onRename: function () {} })),
+      h('div', { style: { border: '1px solid var(--line)', borderRadius: 'var(--radius-md)', overflow: 'hidden' } },
+        h(H.SessionDetails, { members: [{ name: 'Maya Chen' }, { name: 'Jordan Reyes' }, { name: 'Eli St. James', you: true }], agent: { name: 'Huddle AI', state: 'resting', backAt: new Date(Date.now() + 47 * 60000).toISOString(), budget: { remaining: 0, capacity: 500000, refillsAt: new Date(Date.now() + 47 * 60000).toISOString() } }, onClose: function () {} }))));
+</script>
+</body>
+</html>

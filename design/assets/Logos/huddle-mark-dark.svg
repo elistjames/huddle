@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="144" height="144" viewBox="0 0 144 144" role="img" aria-label="Huddle">
+  <title>Huddle</title>
+  <rect width="144" height="144" rx="32" fill="#33240c"/>
+  <circle cx="52" cy="54" r="26" fill="#f2a33a"/>
+  <circle cx="40" cy="106" r="8" fill="#f2a33a"/>
+  <circle cx="64" cy="106" r="8" fill="#f2a33a"/>
+  <circle cx="88" cy="106" r="8" fill="#f2a33a"/>
+</svg>

@@ -1,0 +1,18 @@
+<!-- @dsCard group="Phase 3" height=216 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>SessionRow preview</title>
+<style>body{margin:0;background:var(--paper-sunken);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-4);} .stack{display:flex;flex-direction:column;gap:var(--space-3);} .row{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;} .cap{font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;color:var(--ink-muted);margin:var(--space-2) 0 var(--space-1);} </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', { style: { width: '280px', display: 'flex', flexDirection: 'column', gap: '2px' } },
+      h(H.SessionRow, { title: 'Launch post', preview: 'Huddle AI: The first two paragraphs say the same\u2026', time: '10:45', active: true, hasAgent: true }),
+      h(H.SessionRow, { title: 'Design crit', preview: 'Jordan: pushed the new flows', time: '9:12', unread: 3, hasAgent: true }),
+      h(H.SessionRow, { title: 'Maya, Sam', preview: 'lunch?', time: 'Mon' })));
+</script>
+</body>
+</html>

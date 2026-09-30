@@ -1,0 +1,23 @@
+<!-- @dsCard group="Identity" height=88 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Avatar preview</title>
+<style>body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-4);} .stack{display:flex;flex-direction:column;gap:var(--space-3);} .row{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;} .cap{font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;color:var(--ink-muted);margin:var(--space-2) 0 var(--space-1);} </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', { className: 'row' },
+      h(H.Avatar, { name: 'Maya Chen' }),
+      h(H.Avatar, { name: 'Jordan Reyes' }),
+      h(H.Avatar, { name: 'Sam' }),
+      h(H.Avatar, { name: 'Huddle AI', kind: 'agent' }),
+      h(H.Avatar, { name: 'Huddle AI', kind: 'agent', idle: true }),
+      h(H.Avatar, { name: 'Maya Chen', size: 'sm' }),
+      h(H.Avatar, { name: 'Huddle AI', kind: 'agent', size: 'sm' }),
+      h(H.Avatar, { name: 'Huddle AI', kind: 'agent', size: 'sm', idle: true })));
+</script>
+</body>
+</html>

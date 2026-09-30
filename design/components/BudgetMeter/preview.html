@@ -1,0 +1,18 @@
+<!-- @dsCard group="Agent" height=260 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>BudgetMeter preview</title>
+<style>body{margin:0;background:var(--paper-raised);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-4);} .stack{display:flex;flex-direction:column;gap:var(--space-3);} .row{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;} .cap{font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;color:var(--ink-muted);margin:var(--space-2) 0 var(--space-1);} </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', { className: 'stack', style: { maxWidth: '288px', gap: 'var(--space-6)' } },
+      h(H.BudgetMeter, { remaining: 312000, capacity: 500000 }),
+      h(H.BudgetMeter, { remaining: 41000, capacity: 500000 }),
+      h(H.BudgetMeter, { remaining: 0, capacity: 500000, resting: true, refillsAt: new Date(Date.now() + 47 * 60000).toISOString() })));
+</script>
+</body>
+</html>
