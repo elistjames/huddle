@@ -125,12 +125,23 @@ class Worker:
                 raise
 
     async def startup(self) -> None:
-        """Recover from a restart: stream group, timers, context rebuild and cursor ack."""
+        """Recover from a restart, retrying with backoff until Redis and the chat service's
+        schema are reachable (the agent may start before chat has migrated)."""
+        delay = 1.0
+        while not self._stop.is_set():
+            try:
+                await self._startup_once()
+                return
+            except Exception as exc:  # stores not ready yet: /healthz stays 503 meanwhile
+                log_event("startup_retry", exc_type=type(exc).__name__, retry_in_s=delay)
+                with contextlib.suppress(TimeoutError):
+                    await asyncio.wait_for(self._stop.wait(), timeout=delay)
+                delay = min(delay * 2, 15.0)
+
+    async def _startup_once(self) -> None:
+        """Stream group, optional-column probe, timers, context rebuild and cursor ack."""
         await self.ensure_group()
-        with contextlib.suppress(Exception):
-            probe = getattr(self.store, "probe_columns", None)
-            if probe is not None:
-                await probe()
+        await self.store.probe_columns()
         await self.rearm_timers()
         sessions = {c.session_id for c in await self.store.rearm_candidates()}
         sessions.add(self.s.session_id)
@@ -144,6 +155,8 @@ class Worker:
 
     async def run(self) -> None:
         await self.startup()
+        if self._stop.is_set():
+            return
         self._loops = [
             asyncio.create_task(self._loop(self.consume_once, 0.0, "consume")),
             asyncio.create_task(self._loop(self.schedule_once, self._tick_s, "schedule")),

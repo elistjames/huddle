@@ -286,6 +286,9 @@ class MemoryStore:
     async def insert_summary(self, session_id: str, agent_id: str, summary: Summary) -> None:
         self.w.summaries.append((session_id, agent_id, summary))
 
+    async def probe_columns(self) -> None:
+        return None
+
     async def get_run(self, run_id: str) -> RunRecord | None:
         r = self.w.runs.get(run_id)
         return replace(r) if r else None

@@ -172,6 +172,10 @@ class Store(Protocol):
 
     async def get_run(self, run_id: str) -> RunRecord | None: ...
 
+    async def probe_columns(self) -> None:
+        """Learn which optional columns exist; raises while the schema is not there yet."""
+        ...
+
 
 def asyncpg_url(dsn: str) -> str:
     for prefix in ("postgresql+asyncpg://", "postgresql://", "postgres://"):
@@ -274,6 +278,8 @@ class PostgresStore:
         cols: dict[str, set[str]] = {}
         for table_name, column_name in rows:
             cols.setdefault(str(table_name), set()).add(str(column_name))
+        if "agent_runs" not in cols or "session_summaries" not in cols:
+            raise RuntimeError("chat service schema not migrated yet")
         self._columns = cols
 
     def _filter(self, table: str, values: dict[str, Any]) -> dict[str, Any]:

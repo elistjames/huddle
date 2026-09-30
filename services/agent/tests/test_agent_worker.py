@@ -392,6 +392,32 @@ async def test_a_due_timer_is_claimed_by_exactly_one_worker(
     assert sorted(got) == [0, 1]
 
 
+async def test_startup_waits_for_the_chat_schema(
+    engine: AsyncEngine, redis_client: Redis, redis_settings: Settings
+) -> None:
+    rig = make_rig(engine, redis_client, redis_settings, ScriptedModel())
+    async with engine.begin() as conn:
+        await conn.execute(sa.text("ALTER TABLE agent_runs RENAME TO agent_runs_hidden"))
+    task = asyncio.create_task(rig.worker.run())
+    try:
+        await asyncio.sleep(0.5)
+        assert not rig.worker.started and not task.done()  # retrying, /healthz is 503
+        async with engine.begin() as conn:
+            await conn.execute(sa.text("ALTER TABLE agent_runs_hidden RENAME TO agent_runs"))
+
+        async def started() -> bool:
+            return rig.worker.started
+
+        await wait_for(started)
+    finally:
+        async with engine.begin() as conn:
+            await conn.execute(
+                sa.text("ALTER TABLE IF EXISTS agent_runs_hidden RENAME TO agent_runs")
+            )
+        rig.worker.stop()
+        await asyncio.wait_for(task, 5)
+
+
 async def test_stream_flush_recreates_the_consumer_group(
     engine: AsyncEngine, redis_client: Redis, redis_settings: Settings
 ) -> None:
