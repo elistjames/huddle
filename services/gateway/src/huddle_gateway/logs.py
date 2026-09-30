@@ -41,10 +41,16 @@ class JsonFormatter(logging.Formatter):
         return json.dumps(out, default=str, separators=(",", ":"))
 
 
-def log_event(event: str, *, level: int = logging.INFO, **fields: Any) -> None:
+def log_event(
+    event: str,
+    *,
+    level: int = logging.INFO,
+    exc_info: BaseException | None = None,
+    **fields: Any,
+) -> None:
     """Log one structured event. Callers must never pass message bodies."""
     fields["event"] = event
-    logger.log(level, event, extra={_FIELDS_ATTR: fields})
+    logger.log(level, event, exc_info=exc_info, extra={_FIELDS_ATTR: fields})
 
 
 # uvicorn hands "uvicorn.error" to the websockets protocol, which traces every frame (bodies

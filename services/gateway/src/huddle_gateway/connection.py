@@ -189,7 +189,12 @@ class Connection:
         ]
         closer = asyncio.create_task(self._close_requested.wait())
         try:
-            await asyncio.wait([*tasks, closer], return_when=asyncio.FIRST_COMPLETED)
+            done, _ = await asyncio.wait([*tasks, closer], return_when=asyncio.FIRST_COMPLETED)
+            for t in done:
+                exc = None if t is closer or t.cancelled() else t.exception()
+                if exc is not None:
+                    self._log("conn.error", level=logging.ERROR, task=t.get_name(), exc_info=exc)
+                    self.request_close(CLOSE_INTERNAL, "internal error")
             if not self._peer_gone and self._flush_on_close:
                 with contextlib.suppress(TimeoutError):
                     await asyncio.wait_for(self.queue.wait_empty(), self.settings.close_grace_s)
@@ -454,21 +459,27 @@ class Connection:
         )
 
     async def _replay(self, session_id: str, after_seq: int) -> None:
+        try:
+            await self._replay_pages(session_id, after_seq)
+        except asyncio.CancelledError:
+            raise
+        except ChatError as err:
+            self._log("replay.failed", level=logging.WARNING, code=err.body.code.value)
+            self._unsubscribe()
+            self.send_error(err.body.code, body=err.body)
+        except Exception as exc:  # never leave the socket stuck in REPLAYING
+            self._log("conn.error", level=logging.ERROR, task="replay", exc_info=exc)
+            self._unsubscribe()
+            self.send_error(ErrorCode.INTERNAL, "sync failed; subscribe again")
+
+    async def _replay_pages(self, session_id: str, after_seq: int) -> None:
         t0 = time.perf_counter()
         after = after_seq
         pages = 0
         while True:
-            try:
-                page = await self.gw.chat.get_messages(
-                    session_id, after_seq=after, limit=self.settings.replay_page_size
-                )
-            except ChatError as err:
-                self._log("replay.failed", level=logging.WARNING, code=err.body.code.value)
-                self.phase = Phase.IDLE
-                self.session_id = None
-                self.buffer = []
-                self.send_error(err.body.code, body=err.body)
-                return
+            page = await self.gw.chat.get_messages(
+                session_id, after_seq=after, limit=self.settings.replay_page_size
+            )
             msgs = sorted((m for m in page.messages if m.seq > after), key=lambda m: m.seq)
             progressed = bool(msgs)
             if msgs:
@@ -571,7 +582,7 @@ class Connection:
 
     def _unsubscribe(self) -> None:
         """§7: a removed member's socket is unsubscribed."""
-        if self._replay_task is not None:
+        if self._replay_task is not None and self._replay_task is not asyncio.current_task():
             self._replay_task.cancel()
         self.session_id = None
         self.phase = Phase.IDLE

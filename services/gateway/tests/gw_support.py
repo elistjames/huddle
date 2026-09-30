@@ -100,6 +100,8 @@ class FakeChat:
     submit_error: tuple[int, ErrorBody] | None = None
     # When set, message-page requests fail at the transport (chat unreachable).
     page_error: Exception | None = None
+    # When set, submits raise it inside the gateway's HTTP client (simulates a gateway bug).
+    submit_crash: Exception | None = None
     # When set, message-page requests wait on it (lets a test publish mid-replay).
     page_gate: asyncio.Event | None = None
 
@@ -136,6 +138,8 @@ class FakeChat:
         return httpx.Response(404)
 
     def _submit(self, request: httpx.Request) -> httpx.Response:
+        if self.submit_crash is not None:
+            raise self.submit_crash
         req = SubmitMessageRequest.model_validate_json(request.content)
         self.submitted.append(req)
         self.submit_headers.append(request.headers)

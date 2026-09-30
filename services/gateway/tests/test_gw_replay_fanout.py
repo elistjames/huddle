@@ -173,3 +173,37 @@ async def test_fanout_to_every_device_and_ignores_dead(redis_url: str, redis: Re
             assert (await cl.recv())["sequence"] == 3
         for cl in (a1, a2, c1):
             await cl.close()
+
+
+async def test_unexpected_replay_failure_does_not_wedge_the_socket(redis_url: str) -> None:
+    chat = FakeChat()
+    user = uid()
+    chat.add_member(user)
+    chat.page_error = ValueError("unexpected bug")
+    async with running_gateway(gw_settings(redis_url), chat) as gw:
+        c = await Client.open(gw.ws_url)
+        await c.auth(user)
+        await c.send({"type": "subscribe", "session_id": SESSION, "after_seq": 0})
+        err = await c.recv_type("error")
+        assert err["error"]["code"] == "INTERNAL" and err["error"]["retryable"] is True
+        conn = conn_of(gw, user)
+        assert conn.phase is Phase.IDLE and conn.session_id is None
+        chat.page_error = None
+        assert (await c.subscribe())[-1]["has_more"] is False
+        assert conn.phase is Phase.LIVE
+        await c.close()
+
+
+async def test_handler_crash_closes_with_1011(redis_url: str) -> None:
+    chat = FakeChat()
+    user = uid()
+    chat.add_member(user)
+    chat.submit_crash = ValueError("unexpected bug")
+    async with running_gateway(gw_settings(redis_url), chat) as gw:
+        c = await Client.open(gw.ws_url)
+        await c.auth(user)
+        await c.subscribe()
+        await c.send({"type": "message.send", "client_msg_id": "m", "body": "x"})
+        code, _ = await c.closed()
+        assert code == 1011
+        await wait_until(lambda: not gw.gateway.connections)
