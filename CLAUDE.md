@@ -2,7 +2,7 @@
 
 Huddle is a real-time group chat where people and one autonomous AI agent ("Huddle AI") share a single thread. The agent reads the same context as everyone and speaks up only when it has something worth adding.
 
-**Status: harness and shared contracts are in place; services and the web app are being built to the specs below.**
+**Status: v1 services and web client are built and merged; see `docs/status.md` for verification gaps and open decisions.**
 
 > Naming: the product is **Huddle**. (It was once referred to as "Hubble"; the Notion specs and design system all say Huddle.)
 
