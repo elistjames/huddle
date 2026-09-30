@@ -54,6 +54,8 @@ class GateResult:
     skip_reason: SkipReason | None = None
     encourage: bool = False  # share below 0.5 x 1/N: nudge the decider toward speaking
     mentioned: bool = False
+    # A person answered a question the agent asked (D-023): a conversation turn it should take.
+    answering: bool = False
     share: float = 0.0
     cooldown_s: float = 0.0
 
@@ -97,19 +99,64 @@ def is_trivial(body: str | None) -> bool:
     return 0 < len(words) <= 4 and all(w in _TRIVIAL_WORDS for w in words)
 
 
-def mentions_agent(text: str | None, agent_name: str) -> bool:
-    """True if the agent's name appears in `text` (case-insensitive, whole words).
+def _name_aliases(agent_name: str) -> tuple[list[str], list[str]]:
+    """(strong, weak) ways people refer to the agent. Strong: the full name and the name without
+    spaces ("Huddle AI", "HuddleAI"). Weak: each word of four or more letters ("huddle") and
+    "AI" when the name contains that word ("the AI"). Weak aliases can also be ordinary words
+    ("the huddle was fun"), so they only count in an addressing context (see `mentions_agent`).
+    A renamed agent ("Sage") answers to its new name only."""
+    words = agent_name.split()
+    strong = [a for a in dict.fromkeys([" ".join(words), "".join(words)]) if a]
+    weak = [w for w in words if len(w) >= 4]
+    if any(w.casefold() == "ai" for w in words):
+        weak.append("ai")
+    return strong, [a for a in dict.fromkeys(weak) if a not in strong]
 
-    @mentions are out of scope (Deep Dive §5): this is a plain name match. The name also matches
-    with its spaces removed ("HuddleAI") and with a leading "@".
+
+_GREETING_BEFORE = frozenset(
+    "hey hi hello yo ok okay thanks thank ask dear and so well also sorry".split()
+)
+_ARTICLE_BEFORE = frozenset("the this that our a an my your in of to at on for with about".split())
+_ADDRESS_AFTER = frozenset(
+    "can could would will are do does did what why how please you your should want wanna "
+    "think thoughts there".split()
+)
+_TOKEN = re.compile(r"[\w']+|[^\w\s]")
+
+
+def mentions_agent(text: str | None, agent_name: str) -> bool:
+    """True if someone is talking to the agent (case-insensitive, whole words).
+
+    @mentions are out of scope (Deep Dive §5): there is no mention syntax. The full name
+    ("Huddle AI", "HuddleAI", "@Huddle AI") always counts. A short form ("huddle", "the AI")
+    counts when it reads as addressing: at the start of the message, after a greeting or "@",
+    before a comma, colon or question mark, or before a word like "can"/"are"/"what" (D-022).
+    "the huddle was fun" does not count.
     """
     if not text or not agent_name.strip():
         return False
-    words = [re.escape(w) for w in agent_name.split()]
-    spaced = r"\s+".join(words)
-    joined = "".join(words)
-    pattern = rf"(?<![\w])@?(?:{spaced}|{joined})(?![\w])"
-    return re.search(pattern, text, flags=re.IGNORECASE) is not None
+    strong, weak = _name_aliases(agent_name)
+    full = "|".join(r"\s+".join(re.escape(w) for w in a.split()) for a in strong)
+    if full and re.search(rf"(?<![\w])@?(?:{full})(?![\w])", text, flags=re.IGNORECASE):
+        return True
+    tokens = [m.lower() for m in _TOKEN.findall(text)]
+    weak_set = {a.lower() for a in weak}
+    for i, tok in enumerate(tokens):
+        if tok not in weak_set:
+            continue
+        prev = tokens[i - 1] if i > 0 else ""
+        nxt = tokens[i + 1] if i + 1 < len(tokens) else ""
+        if tok == "ai" and prev == "the":
+            return True  # "what does the AI think": that is how people refer to it
+        if prev in _ARTICLE_BEFORE:
+            continue  # "the huddle", "this huddle", "an AI model": not addressing
+        if prev in _GREETING_BEFORE or prev == "@":
+            return True  # "hey huddle", "thanks huddle", "@huddle"
+        if tok == "ai" and nxt == "" and prev != "":
+            continue  # "I like AI": a bare trailing "AI" is the topic, not the addressee
+        if nxt in {",", ":", "?", ""} or nxt in _ADDRESS_AFTER:
+            return True  # "huddle, ...", "huddle?", "huddle can you ..."
+    return False
 
 
 def _content_words(text: str | None) -> set[str]:
@@ -177,13 +224,17 @@ def participation_share(recent: Sequence[ChatMessage], agent_id: str) -> float:
     return mine / len(text)
 
 
-def share_after_speaking(recent: Sequence[ChatMessage], agent_id: str) -> float:
+def share_after_speaking(
+    recent: Sequence[ChatMessage], agent_id: str, min_messages: int = 0
+) -> float:
     """The agent's share over the window if it posted one more message now (D-021). Checking
     the share before speaking lets every message overshoot the cap by up to one message."""
     text = [m for m in recent if m.is_text]
     mine = sum(1 for m in text if m.sender_type == SenderType.AGENT and m.sender_id == agent_id)
-    if mine == 0:
-        return 0.0  # an agent that has not spoken in the window is never over its share
+    if mine == 0 or len(text) < min_messages:
+        # An agent that has not spoken in the window is never over its share, and a short chat
+        # has too few messages for a share to mean anything (D-022).
+        return 0.0
     return (mine + 1) / (len(text) + 1)
 
 
@@ -220,6 +271,37 @@ def _human_replied_to(
     return bool(after) and after[-1].is_human and is_engaged(agent_msg, after[-1:], agent_name)
 
 
+_ACK_ONLY_WORDS = frozenset(
+    "thanks thank you thx ty cheers bye cya cool nice great perfect awesome amazing lol haha "
+    "np welcome agreed sounds good got it done same love that".split()
+)
+
+
+def _is_ack_only(body: str | None) -> bool:
+    """Politeness, not an answer: "thanks", "sounds good", "great". ("yes", "no" and "sure" are
+    answers, so they are not in this set.)"""
+    words = _WORD.findall((body or "").lower())
+    return bool(words) and all(w in _ACK_ONLY_WORDS for w in words)
+
+
+def answers_agent_question(recent: Sequence[ChatMessage], agent_id: str) -> bool:
+    """The agent's latest message asked a question and a person answered it (D-023).
+
+    Within the next three messages counts: a person who answers late is still answering. The
+    agent's last message must still be its latest one, and "thanks" or "sounds good" is a
+    courtesy, not an answer (otherwise every "How about tacos?" would start a ping-pong)."""
+    last_index = None
+    for i in range(len(recent) - 1, -1, -1):
+        m = recent[i]
+        if m.sender_type == SenderType.AGENT and m.sender_id == agent_id and m.is_text:
+            last_index = i
+            break
+    if last_index is None or "?" not in (recent[last_index].body or ""):
+        return False
+    after = [m for m in recent[last_index + 1 : last_index + 4] if m.is_human]
+    return any(not _is_ack_only(m.body) for m in after)
+
+
 # ---- the gate -------------------------------------------------------------------------------
 
 
@@ -254,9 +336,12 @@ def evaluate_gate(
     if not humans or humans[-1].seq <= snap.last_evaluated_seq:
         return _skip(SkipReason.ALREADY_EVALUATED)
 
-    # D-021: a batch of only greetings/acknowledgements is not worth a decider call.
+    answering = answers_agent_question(recent, snap.agent.id)
+
+    # D-021: a batch of only greetings/acknowledgements is not worth a decider call. Not when
+    # the agent was just asked something, or asked something itself: "yes" is an answer (D-023).
     fresh = [m for m in humans if m.seq > snap.last_evaluated_seq]
-    if fresh and all(is_trivial(m.body) for m in fresh):
+    if fresh and not answering and all(is_trivial(m.body) for m in fresh):
         if not any(mentions_agent(m.body, snap.agent.name) for m in fresh):
             return _skip(SkipReason.TRIVIAL)
 
@@ -282,15 +367,20 @@ def evaluate_gate(
         replied = last is not None and _human_replied_to(recent, last, agent.name)
         # D-021: with one human and the agent, everything the human says is addressed to it.
         replied = replied or n <= 2
+        replied = replied or answering  # answering the agent's question is a turn (D-023)
         if last is not None and not replied and now - last.created_at < timedelta(seconds=cooldown):
             return _skip(SkipReason.COOLDOWN, share=share, cooldown_s=cooldown)
-        if share_after_speaking(recent, agent.id) > policy.share_cap_factor / n:
+        if (
+            share_after_speaking(recent, agent.id, policy.share_min_messages)
+            > policy.share_cap_factor / n
+        ):
             return _skip(SkipReason.SHARE_CAP, share=share, cooldown_s=cooldown)
 
     return GateResult(
         eligible=True,
         encourage=share < policy.share_nudge_factor / n,
         mentioned=mentioned,
+        answering=answering,
         share=share,
         cooldown_s=cooldown,
     )

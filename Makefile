@@ -1,7 +1,7 @@
 COMPOSE = docker compose -f deploy/compose.yaml
 s ?=
 
-.PHONY: up upd down nuke logs ps pull-models gate
+.PHONY: up upd down nuke logs ps pull-models gate eval-decider
 
 up:            ## build and start everything (foreground)
 	$(COMPOSE) up --build
@@ -28,3 +28,6 @@ pull-models:   ## pull the agent's models into the bundled Ollama
 
 gate:          ## the merge gate
 	./scripts/gate.sh
+
+eval-decider:  ## real-model decider eval against your Ollama (not CI); args: make eval-decider a="--only stuck -v"
+	uv run python -m huddle_agent.evals.decider $(a)

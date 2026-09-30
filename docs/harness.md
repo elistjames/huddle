@@ -25,6 +25,19 @@ Adapted from the "Security from the first commit" post in https://github.com/fes
 | Exceptions | Every scanner has a documented waiver path: bandit inline `# nosec BXXX` with rationale per site; zizmor `.github/zizmor.yml`; OSV `osv-scanner.toml`; TruffleHog `.trufflehogignore` | |
 | Repo map | `INDEX.md` must list every package/dir (`scripts/check_index.py`) | |
 
+## Real-model decider eval (run it by hand)
+
+CI cannot run Ollama, so the agent evals in `services/agent/tests/evals` use a scripted stand-in model: they prove the rules around the model (gate, budget, pipeline), not the model's judgement. To measure the real decider, run the labelled conversations in `services/agent/src/huddle_agent/evals/cases.py` against your Ollama:
+
+```sh
+make eval-decider                                   # decider only, 3 repeats per case
+make eval-decider a="--with-writer"                 # also run the real writer and check its replies
+make eval-decider a="--only stuck -v --repeats 5"   # one category/case, every trial's reason
+make eval-decider a="--json /tmp/decider.json --min-accuracy 0.8"   # for scripting
+```
+
+Cases the deterministic gate decides (addressing the agent, answering its question, greetings) never reach the model and are reported under `gate`; the `decider` rows are the model's judgement. Each miss prints the decider's own reason. Add a case whenever manual testing finds a miss; the labels come from the spec policy (§5), and CI checks that every gate-decided case matches its label (`test_agent_decider_eval.py`). Options: `--decider`, `--writer`, `--url`, `--decider-tokens`, `--decider-timeout`.
+
 ## Spec anti-drift
 
 - `docs/specs/*` are the source of truth. Contract types live in `libs/contracts` and mirror Deep Dive §3/§4/§6; a change to either must change both in the same PR.

@@ -406,6 +406,25 @@ def test_no_lull_without_human_messages() -> None:
         ("HUDDLE   AI?", True),
         ("the huddle was fun", False),
         ("Huddle AIs are neat", False),
+        # D-022: the ways people actually address it (QA: "Hey huddle are you there?")
+        ("Hey huddle are you there?", True),
+        ("Maybe the AI has an idea", True),
+        ("what does the AI think", True),
+        ("huddle, what do you think", True),
+        ("thanks huddle", True),
+        ("ask huddle", True),
+        ("@huddle", True),
+        ("huddle", True),
+        ("hey ai", True),
+        # ... and the ordinary uses of the same words
+        ("Start the huddle", False),
+        ("I love this huddle", False),
+        ("We should do a huddle later", False),
+        ("Huddle is cool", False),
+        ("this AI stuff is wild", False),
+        ("I like AI", False),
+        ("an ai model", False),
+        ("why is he not responding?", False),
         ("", False),
         (None, False),
     ],
@@ -430,3 +449,111 @@ def test_debounce_quiet_3s_capped_at_8s() -> None:
 def test_share_ignores_system_lines() -> None:
     recent = [msg(1, "usr_alice"), msg(2, "system", "Bob joined"), msg(3, "agent")]
     assert participation_share(recent, AGENT.id) == pytest.approx(0.5)
+
+
+def test_a_renamed_agent_answers_to_its_new_name_only() -> None:
+    assert mentions_agent("hey Sage, thoughts?", "Sage")
+    assert not mentions_agent("hey huddle are you there?", "Sage")
+    assert not mentions_agent("what does the AI think", "Sage")
+
+
+def test_nickname_mention_bypasses_the_cooldown_and_reaches_the_decider() -> None:
+    recent = [
+        *pad(),
+        msg(1, "usr_alice", at=T0),
+        msg(2, "agent", "a point", at=T0 + timedelta(seconds=1)),
+        msg(3, "usr_bob", "Hey huddle are you there?", at=T0 + timedelta(seconds=3)),
+    ]
+    r = gate(recent, n=3, now=T0 + timedelta(seconds=6))
+    assert r.eligible and r.mentioned
+
+
+def test_no_share_cap_in_a_short_chat() -> None:
+    # 3 of 6 messages are the agent's: far over 1.25/3, but six messages say nothing about share.
+    recent = [
+        msg(1, "usr_alice", at=T0 - timedelta(hours=1)),
+        msg(2, "agent", "x", at=T0 - timedelta(hours=1)),
+        msg(3, "usr_bob", "what about the budget?", at=T0 - timedelta(hours=1)),
+        msg(4, "agent", "y", at=T0 - timedelta(hours=1)),
+        msg(5, "usr_alice", "and the plan?", at=T0 - timedelta(hours=1)),
+        msg(6, "usr_bob", "what about the venue?", at=T0),
+    ]
+    assert gate(recent, n=3).eligible
+    # Ten messages, four of them the agent's: now the share counts (5/11 > 1.25/3).
+    old = T0 - timedelta(hours=1)
+    long_chat = [
+        msg(s, "agent" if s in {2, 4, 6, 8} else "usr_alice", "x", at=old + timedelta(seconds=s))
+        for s in range(1, 10)
+    ]
+    long_chat.append(msg(10, "usr_bob", "what about the venue?", at=T0))
+    assert gate(long_chat, n=3).skip_reason == SkipReason.SHARE_CAP
+
+
+def test_answering_the_agents_question_is_a_turn_even_when_trivial_or_in_cooldown() -> None:
+    """QA: the agent asked a question, the person answered, and the agent stayed silent."""
+    recent = [
+        *pad(),
+        msg(1, "usr_alice", "I am not sure", at=T0),
+        msg(
+            2,
+            "agent",
+            "Was it a specific topic or a general suggestion?",
+            at=T0 + timedelta(seconds=1),
+        ),
+        msg(3, "usr_alice", "general suggestion", at=T0 + timedelta(seconds=3)),
+    ]
+    r = gate(recent, n=3, now=T0 + timedelta(seconds=6))
+    assert r.eligible and r.answering and not r.mentioned
+    # "yes" is an answer, not small talk
+    yes = [*recent[:-1], msg(3, "usr_alice", "yes", at=T0 + timedelta(seconds=3))]
+    assert gate(yes, n=3, now=T0 + timedelta(seconds=6)).answering
+    assert gate(yes, n=3, now=T0 + timedelta(seconds=6)).skip_reason is None
+
+
+def test_a_reply_to_a_statement_is_not_an_answer() -> None:
+    recent = [
+        *pad(),
+        msg(1, "agent", "One angle: check the numbers first.", at=T0),
+        msg(2, "usr_alice", "thanks", at=T0 + timedelta(seconds=3)),
+    ]
+    r = gate(recent, n=3, now=T0 + timedelta(seconds=6))
+    assert not r.answering and r.skip_reason == SkipReason.TRIVIAL
+
+
+def test_an_old_agent_question_is_not_answered_by_later_chatter() -> None:
+    recent = [
+        *pad(),
+        msg(1, "agent", "Which venue?", at=T0),
+        msg(2, "usr_alice", "a", at=T0 + timedelta(seconds=1)),
+        msg(3, "usr_bob", "b", at=T0 + timedelta(seconds=2)),
+        msg(4, "usr_alice", "c", at=T0 + timedelta(seconds=3)),
+        msg(5, "usr_bob", "unrelated chatter", at=T0 + timedelta(seconds=4)),
+    ]
+    from huddle_agent.policy import answers_agent_question
+
+    assert answers_agent_question(recent, AGENT.id)  # a person replied within three messages
+    assert not answers_agent_question([*pad(), msg(1, "agent", "Which venue?", at=T0)], AGENT.id)
+
+
+def test_courtesy_after_an_agent_question_is_not_an_answer() -> None:
+    for body in ["thanks", "sounds good", "great, thanks!", "perfect"]:
+        recent = [
+            *pad(),
+            msg(1, "agent", "How about the taco place?", at=T0),
+            msg(2, "usr_alice", body, at=T0 + timedelta(seconds=3)),
+        ]
+        r = gate(recent, n=3, now=T0 + timedelta(seconds=6))
+        assert not r.answering, body
+        assert r.skip_reason == SkipReason.TRIVIAL, body
+
+
+def test_answering_still_respects_the_share_cap() -> None:
+    old = T0 - timedelta(hours=1)
+    chat = [
+        msg(s, "agent" if s in {2, 4, 6, 8, 9} else "usr_alice", "x", at=old + timedelta(seconds=s))
+        for s in range(1, 10)
+    ]
+    chat[-1] = msg(9, "agent", "Which day works?", at=old + timedelta(seconds=9))
+    chat.append(msg(10, "usr_bob", "Friday", at=T0))
+    r = gate(chat, n=3, now=T0 + timedelta(seconds=3))
+    assert r.skip_reason == SkipReason.SHARE_CAP
