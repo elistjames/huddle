@@ -586,7 +586,16 @@ async def test_restart_with_model_down_is_away(world: MemoryWorld, model: Script
     assert world.acks == []
 
 
-@pytest.mark.parametrize("draft", ['"Huddle AI: Quoted reply."', "huddle ai:  Quoted reply."])
+@pytest.mark.parametrize(
+    "draft",
+    [
+        '"Huddle AI: Quoted reply."',
+        "huddle ai:  Quoted reply.",
+        "assistant\n\nQuoted reply.",  # seen with llama3 on Ollama
+        "Assistant:\nQuoted reply.",
+        "<|start_header_id|>assistant<|end_header_id|>\n\nQuoted reply.<|eot_id|>",
+    ],
+)
 async def test_writer_output_is_cleaned(
     world: MemoryWorld, model: ScriptedModel, executor: RunExecutor, draft: str
 ) -> None:
@@ -594,3 +603,15 @@ async def test_writer_output_is_cleaned(
     model.script(Stage.DECIDE, True).script(Stage.WRITE, draft)
     await executor.execute(world.session_id)
     assert world.agent_messages()[0].body == "Quoted reply."
+
+
+def test_clean_draft_only_strips_a_role_word_on_its_own_line() -> None:
+    from huddle_agent.runner import clean_draft
+
+    assert clean_draft("Assistant professors get tenure reviews.", "Huddle AI") == (
+        "Assistant professors get tenure reviews."
+    )
+    assert clean_draft("user research first, then the plan.", "Huddle AI") == (
+        "user research first, then the plan."
+    )
+    assert clean_draft("assistant", "Huddle AI") == ""

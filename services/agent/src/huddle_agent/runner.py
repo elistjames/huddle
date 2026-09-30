@@ -130,9 +130,25 @@ class _Run:
         )
 
 
+# Chat-template artefacts small Llama models sometimes emit at the start or end of a reply: a
+# bare role line ("assistant", "assistant:"), header tokens, or an end-of-turn token.
+_TEMPLATE_TOKENS = re.compile(
+    r"<\|(?:start_header_id|end_header_id|eot_id|begin_of_text|end_of_text)\|>", re.IGNORECASE
+)
+_ROLE_LINE = re.compile(r"^\s*(?:assistant|system|user)\s*:?\s*(?:\n+|$)", re.IGNORECASE)
+
+
 def clean_draft(text: str, agent_name: str) -> str:
-    """Strip wrapping quotes and a leading "<agent name>:" the model sometimes adds."""
-    out = text.strip().strip('"').strip()
+    """Strip template artefacts, wrapping quotes and a leading "<agent name>:" the model
+    sometimes adds. Only a role word on its own line is removed, never a reply that merely
+    starts with the word."""
+    out = _TEMPLATE_TOKENS.sub("\n", text).strip()
+    while True:
+        stripped = _ROLE_LINE.sub("", out, count=1).strip()
+        if stripped == out:
+            break
+        out = stripped
+    out = out.strip('"').strip()
     prefix = re.compile(rf"^{re.escape(agent_name)}\s*:\s*", re.IGNORECASE)
     return prefix.sub("", out).strip()
 
