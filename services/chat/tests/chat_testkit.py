@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import secrets
 from dataclasses import dataclass, field
@@ -79,16 +80,20 @@ class FakeGateways:
         return cid
 
     async def drain(self, quiet: float = 0.2) -> dict[str, list[dict[str, Any]]]:
-        """Collect envelopes until the channels have been quiet for `quiet` seconds."""
-        while True:
+        """Collect envelopes until the channels have been quiet for `quiet` seconds.
+        (get_message also returns None for a swallowed subscribe confirmation, so a single None
+        does not mean the channel is drained.)"""
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + quiet
+        while loop.time() < deadline:
             msg: dict[str, Any] | None = await self.pubsub.get_message(  # pyright: ignore[reportUnknownMemberType, reportUnknownVariableType]
-                ignore_subscribe_messages=True, timeout=quiet
+                ignore_subscribe_messages=True, timeout=0.02
             )
-            if msg is None:
-                return self.received
-            if msg.get("type") == "message":
+            if msg is not None and msg.get("type") == "message":
                 channel = str(msg["channel"]).removeprefix("gw:")
                 self.received.setdefault(channel, []).append(json.loads(msg["data"]))
+                deadline = loop.time() + quiet
+        return self.received
 
     def frames(self, gateway: str, frame_type: str | None = None) -> list[dict[str, Any]]:
         envs = self.received.get(self.gw(gateway), [])
