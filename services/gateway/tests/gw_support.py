@@ -7,9 +7,13 @@ httpx.MockTransport, so gateway tests never need the real chat service.
 from __future__ import annotations
 
 import asyncio
+import base64
 import json
+import os
 import re
 import secrets
+import socket
+import struct
 import time
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -20,9 +24,11 @@ from typing import Any
 import httpx
 import jwt
 import uvicorn
+from redis.asyncio import Redis
 from websockets.asyncio.client import ClientConnection, connect
 from websockets.exceptions import ConnectionClosed
 
+from huddle_contracts import redis_keys
 from huddle_contracts.errors import ErrorBody
 from huddle_contracts.internal import (
     SERVICE_TOKEN_HEADER,
@@ -34,7 +40,7 @@ from huddle_contracts.internal import (
     SubmitMessageResponse,
 )
 from huddle_contracts.models import Message, SenderType
-from huddle_contracts.ws import MessageCreated
+from huddle_contracts.ws import FanoutEnvelope, MessageCreated
 from huddle_gateway.app import create_app, gateway_of
 from huddle_gateway.config import Settings
 from huddle_gateway.gateway import Gateway
@@ -88,6 +94,8 @@ class FakeChat:
     acks: list[AckDeliveryRequest] = field(default_factory=list[AckDeliveryRequest])
     page_requests: list[dict[str, str]] = field(default_factory=list[dict[str, str]])
     submit_error: tuple[int, ErrorBody] | None = None
+    # When set, message-page requests fail at the transport (chat unreachable).
+    page_error: Exception | None = None
     # When set, message-page requests wait on it (lets a test publish mid-replay).
     page_gate: asyncio.Event | None = None
 
@@ -115,6 +123,8 @@ class FakeChat:
         if request.method == "GET" and (m := _MSGS.match(path)):
             if self.page_gate is not None:
                 await self.page_gate.wait()
+            if self.page_error is not None:
+                raise self.page_error
             return self._page(m.group(1), request)
         if request.method == "GET" and (m := _MEMBER.match(path)):
             active = (m.group(1), m.group(2)) in self.members
@@ -269,9 +279,98 @@ class Client:
         await self.ws.close()
 
 
+async def publish_raw(redis: Redis, gateway_id: str, payload: str) -> None:
+    """Publish on gw:{gateway_id} the way the chat service does."""
+    await redis.publish(redis_keys.gw_channel(gateway_id), payload)  # pyright: ignore[reportUnknownMemberType]
+
+
+async def publish(
+    redis: Redis, gateway_id: str, connection_ids: list[str], frame: dict[str, Any]
+) -> None:
+    env = FanoutEnvelope(connection_ids=connection_ids, frame=frame)
+    await publish_raw(redis, gateway_id, env.model_dump_json())
+
+
 async def wait_until(pred: Any, timeout: float = 5.0, interval: float = 0.02) -> None:  # noqa: ASYNC109
     deadline = time.monotonic() + timeout
     while not pred():
         if time.monotonic() > deadline:
             raise AssertionError("condition not met in time")
         await asyncio.sleep(interval)
+
+
+class RawClient:
+    """A minimal RFC 6455 client over a plain socket that can genuinely stop reading.
+
+    Library clients keep draining the socket into their own buffers; this one reads only when
+    asked, so the kernel buffers fill and the gateway sees a real slow consumer.
+    """
+
+    def __init__(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter) -> None:
+        self.reader = reader
+        self.writer = writer
+
+    @classmethod
+    async def open(cls, port: int, *, rcvbuf: int = 16_384) -> RawClient:
+        sock = socket.socket()
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, rcvbuf)
+        sock.setblocking(False)
+        await asyncio.get_running_loop().sock_connect(sock, ("127.0.0.1", port))
+        reader, writer = await asyncio.open_connection(sock=sock, limit=16_384)
+        key = base64.b64encode(os.urandom(16)).decode()
+        writer.write(
+            (
+                f"GET /ws HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nUpgrade: websocket\r\n"
+                f"Connection: Upgrade\r\nSec-WebSocket-Key: {key}\r\n"
+                "Sec-WebSocket-Version: 13\r\n\r\n"
+            ).encode()
+        )
+        head = await reader.readuntil(b"\r\n\r\n")
+        assert head.startswith(b"HTTP/1.1 101"), head
+        return cls(reader, writer)
+
+    async def send(self, frame: dict[str, Any]) -> None:
+        payload = json.dumps(frame).encode()
+        mask = os.urandom(4)
+        n = len(payload)
+        if n < 126:
+            header = struct.pack("!BB", 0x81, 0x80 | n)
+        elif n < 1 << 16:
+            header = struct.pack("!BBH", 0x81, 0x80 | 126, n)
+        else:
+            header = struct.pack("!BBQ", 0x81, 0x80 | 127, n)
+        masked = bytes(b ^ mask[i % 4] for i, b in enumerate(payload))
+        self.writer.write(header + mask + masked)
+        await self.writer.drain()
+
+    async def read_frame(self) -> tuple[int, bytes]:
+        b1, b2 = await self.reader.readexactly(2)
+        n = b2 & 0x7F
+        if n == 126:
+            (n,) = struct.unpack("!H", await self.reader.readexactly(2))
+        elif n == 127:
+            (n,) = struct.unpack("!Q", await self.reader.readexactly(8))
+        return b1 & 0x0F, await self.reader.readexactly(n)
+
+    async def recv(self) -> dict[str, Any]:
+        while True:
+            opcode, payload = await self.read_frame()
+            if opcode == 0x1:
+                data: dict[str, Any] = json.loads(payload)
+                return data
+            if opcode == 0x8:
+                raise ConnectionError(f"closed: {payload[:2].hex()}")
+
+    async def close_code(self) -> tuple[int | None, int]:
+        """Drain everything; return (close code, number of text frames read before it)."""
+        count = 0
+        while True:
+            opcode, payload = await self.read_frame()
+            if opcode == 0x1:
+                count += 1
+            elif opcode == 0x8:
+                code = struct.unpack("!H", payload[:2])[0] if len(payload) >= 2 else None
+                return code, count
+
+    def close(self) -> None:
+        self.writer.close()
