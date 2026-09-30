@@ -1,0 +1,24 @@
+<!-- @dsCard group="Session" height=348 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>ThreadHeader preview</title>
+<style>body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-4);} .stack{display:flex;flex-direction:column;gap:var(--space-3);} .row{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;} .cap{font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;color:var(--ink-muted);margin:var(--space-2) 0 var(--space-1);} </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', { className: 'stack', style: { gap: 0 } },
+      [['Connected', 'connected', { name: 'Huddle AI', state: 'following' }],
+       ['Reconnecting', 'reconnecting', { name: 'Huddle AI', state: 'following' }],
+       ['Agent paused', 'connected', { name: 'Huddle AI', state: 'paused' }],
+       ['Agent resting', 'connected', { name: 'Huddle AI', state: 'resting', backAt: new Date(Date.now() + 47 * 60000).toISOString() }],
+       ['Huddle ended', 'closed', { name: 'Huddle AI', state: 'following' }]].map(function (r, i) {
+        return h('div', { key: i },
+          h('div', { className: 'cap', style: { padding: '0 var(--space-6)' } }, r[0]),
+          h(H.ThreadHeader, { title: 'Launch post', connection: r[1], agent: r[2], members: [{ name: 'Maya Chen' }, { name: 'Jordan Reyes' }, { name: 'Eli St. James' }] }));
+      })));
+</script>
+</body>
+</html>

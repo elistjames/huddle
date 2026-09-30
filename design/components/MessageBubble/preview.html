@@ -1,0 +1,28 @@
+<!-- @dsCard group="Chat" height=428 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>MessageBubble preview</title>
+<style>body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-4);} .stack{display:flex;flex-direction:column;gap:var(--space-3);} .row{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;} .cap{font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;color:var(--ink-muted);margin:var(--space-2) 0 var(--space-1);} </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', { className: 'stack', style: { maxWidth: '640px' } },
+      h('div', { className: 'cap' }, 'Other people, the AI, you'),
+      h(H.MessageBubble, { from: 'other', tail: true }, 'Can someone sanity-check the rollout plan?'),
+      h(H.MessageBubble, { from: 'agent', tail: true }, 'Step 3 runs the migration before the flag flips. Worth swapping those two.'),
+      h(H.MessageBubble, { from: 'self', tail: true, status: 'agent-read' }, 'Good catch, swapping now.'),
+      h('div', { className: 'cap' }, 'Your message, as it travels'),
+      h(H.MessageBubble, { from: 'self', tail: true, status: 'sending' }, 'Pushed the fix'),
+      h(H.MessageBubble, { from: 'self', tail: true, status: 'stored' }, 'Pushed the fix'),
+      h(H.MessageBubble, { from: 'self', tail: true, status: 'delivered' }, 'Pushed the fix'),
+      h(H.MessageBubble, { from: 'self', tail: true, status: 'agent-read' }, 'Pushed the fix'),
+      h('div', { className: 'cap' }, 'When it fails'),
+      h(H.MessageBubble, { from: 'self', tail: true, status: 'failed' }, 'Pushed the fix'),
+      h(H.MessageBubble, { from: 'self', tail: true, status: 'failed', errorCode: 'RATE_LIMITED' }, 'Pushed the fix'),
+      h(H.MessageBubble, { from: 'self', tail: true, status: 'failed', errorCode: 'MESSAGE_TOO_LONG' }, 'A very long message\u2026')));
+</script>
+</body>
+</html>

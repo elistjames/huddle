@@ -1,0 +1,19 @@
+<!-- @dsCard group="Identity" height=200 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Logo preview</title>
+<style>body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-6);display:flex;flex-direction:column;gap:var(--space-6);} .row{display:flex;gap:var(--space-6);align-items:center;flex-wrap:wrap;}</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+  ReactDOM.createRoot(document.getElementById('root')).render(h(React.Fragment, null,
+    h('div', { className: 'row' }, h(H.Logo, { size: 48 }), h(H.Logo, { size: 28 })),
+    h('div', { className: 'row' },
+      h(H.Logo, { variant: 'mark', size: 64 }), h(H.Logo, { variant: 'mark', tone: 'solid', size: 64 }),
+      h(H.Logo, { variant: 'mark', size: 32 }), h(H.Logo, { variant: 'mark', tone: 'solid', size: 32 }),
+      h(H.Logo, { variant: 'mark', tone: 'solid', size: 16 }))));
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+<!-- @dsCard group="Chat" height=124 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>SystemNote preview</title>
+<style>body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-4);} .stack{display:flex;flex-direction:column;gap:var(--space-3);} .row{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;} .cap{font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;color:var(--ink-muted);margin:var(--space-2) 0 var(--space-1);} </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', null,
+      h(H.SystemNote, { time: '10:38' }, 'Maya Chen started the huddle'),
+      h(H.SystemNote, null, 'Huddle AI joined'),
+      h(H.SystemNote, null, 'Jordan Reyes paused Huddle AI'),
+      h(H.SystemNote, null, 'Jordan Reyes resumed Huddle AI')));
+</script>
+</body>
+</html>

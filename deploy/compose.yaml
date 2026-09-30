@@ -1,0 +1,29 @@
+# Local topology: every service is its own container on a private network, standing in for
+# its own server. Services talk only over the network (HTTP, Redis, Postgres), never in-process.
+name: huddle
+services:
+  postgres:
+    image: postgres:16
+    environment: {POSTGRES_PASSWORD: "${POSTGRES_PASSWORD:-postgres}"}
+    ports: ["5432:5432"]
+    healthcheck: {test: ["CMD", "pg_isready", "-U", "postgres"], interval: 5s, retries: 10}
+  redis:
+    image: redis:7
+    ports: ["6379:6379"]
+    healthcheck: {test: ["CMD", "redis-cli", "ping"], interval: 5s, retries: 10}
+  chat:
+    build: {context: .., dockerfile: services/chat/Dockerfile}
+    env_file: [.env]
+    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}}
+    ports: ["8001:8001"]
+  gateway:
+    build: {context: .., dockerfile: services/gateway/Dockerfile}
+    env_file: [.env]
+    depends_on: {redis: {condition: service_healthy}, chat: {condition: service_started}}
+    ports: ["8000:8000"]
+    deploy: {replicas: 1}  # any gateway can take any connection; scale freely
+  agent:
+    build: {context: .., dockerfile: services/agent/Dockerfile}
+    env_file: [.env]
+    depends_on: {postgres: {condition: service_healthy}, redis: {condition: service_healthy}}
+    extra_hosts: ["host.docker.internal:host-gateway"]  # Ollama runs on the host

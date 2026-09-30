@@ -1,0 +1,163 @@
+<!-- @dsCard group="Examples" height=700 width=1100 page subtitle="One huddle, start to finish: join, chat, receipts, agent states and the details panel" -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Huddle screen</title>
+<style>
+  html, body { margin:0; min-height:100%; }
+  html { background:transparent; }
+  body { background:var(--paper); color:var(--ink); font-family:var(--font-sans); min-height:100vh; }
+  #root { min-height:100vh; display:flex; flex-direction:column; }
+  .proto { flex:1; min-height:640px; background:var(--paper); display:flex; flex-direction:column; }
+  .chrome { display:flex; align-items:center; gap:var(--space-3); padding:var(--space-2) var(--space-4); background:var(--paper-sunken); border-bottom:1px solid var(--line); font-size:13px; line-height:18px; color:var(--ink-muted); flex-wrap:wrap; }
+  .chrome label { display:flex; align-items:center; gap:var(--space-2); }
+  .chrome select { font:inherit; color:var(--ink); background:var(--paper-raised); border:1px solid var(--line-strong); border-radius:var(--radius-sm); height:28px; padding:0 var(--space-2); }
+  .chrome select:focus-visible { outline:2px solid var(--focus); outline-offset:2px; }
+  .chrome .grow { flex:1; }
+  .stage { flex:1; min-height:0; display:grid; grid-template-columns:1fr auto; }
+  .col { display:flex; flex-direction:column; min-width:0; min-height:0; }
+  .thread { flex:1; overflow:auto; padding:var(--space-4) var(--space-6); }
+  .thread-inner { max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-4); }
+  .earlier { align-self:center; }
+  .foot { padding:0 var(--space-6) var(--space-4); }
+  .foot-inner { max-width:720px; margin:0 auto; display:flex; flex-direction:column; gap:var(--space-2); }
+  .center { flex:1; display:flex; align-items:center; justify-content:center; padding:var(--space-6); }
+  .card { width:340px; }
+  .side { width:320px; border-left:1px solid var(--line); background:var(--paper-raised); overflow:auto; }
+  .banner { padding:var(--space-2) var(--space-6); font-size:13px; line-height:18px; color:var(--ink-muted); background:var(--paper-sunken); border-bottom:1px solid var(--line); text-align:center; }
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+var H = window.Huddle, h = React.createElement, useState = React.useState, useEffect = React.useEffect, useRef = React.useRef;
+var ME = 'Eli St. James';
+var MEMBERS = [{ name: 'Maya Chen' }, { name: 'Jordan Reyes' }, { name: ME, you: true }];
+var BUDGET = { remaining: 312000, capacity: 500000 };
+var STATES = [
+  ['join', 'Join'], ['loading', 'Loading history'], ['empty', 'Empty huddle'], ['live', 'Live'],
+  ['connecting', 'Connecting'], ['reconnecting', 'Reconnecting'], ['failed', 'Send failed'],
+  ['paused', 'AI paused'], ['resting', 'AI resting (budget)'], ['away', 'AI away'], ['ended', 'Huddle ended']
+];
+var seq = 0;
+function msg(author, kind, time, text, status) { return { type: 'msg', id: ++seq, author: author, kind: kind, time: time, text: text, status: status }; }
+function history(agentReads) {
+  return [
+    { type: 'note', id: ++seq, text: 'Maya Chen started the huddle', time: '10:38' },
+    { type: 'note', id: ++seq, text: 'Huddle AI joined' },
+    msg('Maya Chen', 'other', '10:42', 'Draft of the launch post is in the doc'),
+    msg('Maya Chen', 'other', '10:42', 'mostly worried the intro is too long'),
+    msg('Jordan Reyes', 'other', '10:44', 'reading now'),
+    msg('Huddle AI', 'agent', '10:45', 'The first two paragraphs say the same thing. Cutting the second gets the intro to about 60 words, and the “why now” line moves up where people will see it.'),
+    msg(ME, 'self', '10:46', 'agreed, cutting it', agentReads ? 'agent-read' : 'delivered'),
+    msg('Maya Chen', 'other', '10:47', 'much better. shipping at 2?')
+  ];
+}
+function inMinutes(m) { return new Date(Date.now() + m * 60000); }
+function scenario(name) {
+  var s = { view: 'thread', items: history(true), conn: 'connected', agent: { name: 'Huddle AI', state: 'following', budget: BUDGET }, composer: 'ready' };
+  if (name === 'join') s.view = 'join';
+  if (name === 'loading') { s.view = 'loading'; s.conn = 'connecting'; s.composer = 'connecting'; s.items = []; }
+  if (name === 'empty') s.items = [{ type: 'note', id: ++seq, text: 'You started the huddle' }];
+  if (name === 'connecting') { s.conn = 'connecting'; s.composer = 'connecting'; }
+  if (name === 'reconnecting') { s.conn = 'reconnecting'; s.composer = 'reconnecting'; }
+  if (name === 'failed') { s.items = history(true); s.items.push(msg(ME, 'self', '10:49', 'ok, sending the link now', 'failed')); s.items[s.items.length - 1].errorCode = 'RATE_LIMITED'; }
+  if (name === 'paused') { s.agent = { name: 'Huddle AI', state: 'paused', budget: BUDGET }; s.items = history(false); s.items.push({ type: 'note', id: ++seq, text: 'Maya Chen paused Huddle AI', time: '10:48' }); }
+  if (name === 'resting') { s.agent = { name: 'Huddle AI', state: 'resting', backAt: inMinutes(20), budget: { remaining: 0, capacity: 500000, refillsAt: inMinutes(20) } }; s.items = history(false); }
+  if (name === 'away') { s.agent = { name: 'Huddle AI', state: 'away', budget: BUDGET }; s.items = history(false); }
+  if (name === 'ended') { s.conn = 'closed'; s.composer = 'closed'; }
+  return s;
+}
+
+function App() {
+  var st = useState('join'), which = st[0], setWhich = st[1];
+  var sc = useState(function () { return scenario('join'); }), s = sc[0], setS = sc[1];
+  var dt = useState(false), details = dt[0], setDetails = dt[1];
+  var tm = useState([]), timers = tm[0];
+  var replied = useRef(false);
+  function later(fn, ms) { var t = setTimeout(fn, ms); timers.push(t); }
+  function clear() { timers.forEach(clearTimeout); timers.length = 0; replied.current = false; }
+  function pick(name) { clear(); setWhich(name); setS(scenario(name)); setDetails(false); }
+  function patch(fn) { setS(function (p) { return fn(Object.assign({}, p)); }); }
+  function setStatus(id, status, extra) {
+    patch(function (p) { p.items = p.items.map(function (it) { return it.id === id ? Object.assign({}, it, { status: status }, extra || {}) : it; }); return p; });
+  }
+  function nowStr() { var d = new Date(); return d.toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }).replace(/ ?[AP]M/i, ''); }
+  function deliver(id, agentState) {
+    later(function () { setStatus(id, 'stored'); }, 350);
+    later(function () { setStatus(id, 'delivered'); }, 900);
+    if (agentState === 'following') later(function () { setStatus(id, 'agent-read'); }, 1700);
+  }
+  function send(text) {
+    var m = msg(ME, 'self', nowStr(), text, 'sending');
+    var state = s.agent.state;
+    patch(function (p) { p.items = p.items.concat([m]); return p; });
+    deliver(m.id, state);
+    if (state === 'following' && !replied.current) {
+      replied.current = true;
+      later(function () { patch(function (p) { p.agent = Object.assign({}, p.agent, { state: 'writing' }); return p; }); }, 2000);
+      later(function () {
+        patch(function (p) {
+          p.agent = Object.assign({}, p.agent, { state: 'following', budget: { remaining: 306000, capacity: 500000 } });
+          p.items = p.items.concat([msg(p.agent.name, 'agent', nowStr(), '2 works. The changelog link in the last paragraph still points at the old release, so worth fixing before it goes out.')]);
+          return p;
+        });
+      }, 4200);
+    }
+  }
+  function retry(id) { setStatus(id, 'sending', { errorCode: null }); deliver(id, s.agent.state); }
+  function note(text) { patch(function (p) { p.items = p.items.concat([{ type: 'note', id: ++seq, text: text, time: nowStr() }]); return p; }); }
+  function setAgent(state) { patch(function (p) { p.agent = Object.assign({}, p.agent, { state: state }); return p; }); }
+
+  useEffect(function () { var el = document.querySelector('.thread'); if (el) el.scrollTop = el.scrollHeight; }, [s.items.length, s.view, which, details]);
+
+  var chrome = h('div', { className: 'chrome' },
+    h('strong', { style: { color: 'var(--ink)', fontWeight: 600 } }, 'Prototype'),
+    h('label', null, 'State ', h('select', { value: which, 'aria-label': 'Screen state', onChange: function (e) { pick(e.target.value); } },
+      STATES.map(function (o) { return h('option', { key: o[0], value: o[0] }, o[1]); }))),
+    h('span', { className: 'grow' }),
+    h('label', null, 'Theme ', h('select', { 'aria-label': 'Theme', defaultValue: 'auto', onChange: function (e) {
+      var v = e.target.value, r = document.documentElement; if (v === 'auto') r.removeAttribute('data-theme'); else r.setAttribute('data-theme', v);
+    } }, h('option', { value: 'auto' }, 'Auto'), h('option', { value: 'light' }, 'Light'), h('option', { value: 'dark' }, 'Dark'))));
+
+  if (s.view === 'join') {
+    return h('div', { className: 'proto' }, chrome,
+      h('div', { className: 'center' }, h('div', { className: 'card' }, h(H.JoinForm, { onJoin: function () { pick('live'); } }))));
+  }
+
+  // group consecutive messages by author
+  var blocks = [];
+  s.items.forEach(function (it) {
+    if (it.type === 'note') { blocks.push({ note: it }); return; }
+    var last = blocks[blocks.length - 1];
+    if (last && last.group && last.author === it.author && last.time === it.time) last.messages.push(it);
+    else blocks.push({ group: true, author: it.author, kind: it.kind, time: it.time, messages: [it] });
+  });
+  var empty = s.items.every(function (i) { return i.type === 'note'; }) && s.view !== 'loading';
+  var thread = s.view === 'loading' ? h(H.ThreadSkeleton) : h('div', { className: 'thread-inner' },
+    empty ? null : h(H.Button, { className: 'earlier', variant: 'ghost', size: 'sm', icon: 'chevron-down' }, 'Load earlier messages'),
+    blocks.map(function (b, i) {
+      if (b.note) return h(H.SystemNote, { key: 'n' + b.note.id, time: b.note.time }, b.note.text);
+      return h(H.MessageGroup, { key: 'g' + b.messages[0].id, author: b.author, kind: b.kind, time: b.time, agentName: s.agent.name,
+        messages: b.messages.map(function (m) { return { text: m.text, status: m.status, errorCode: m.errorCode, onRetry: function () { retry(m.id); } }; }) });
+    }),
+    empty ? h(H.EmptyState) : null);
+  var banner = s.conn === 'reconnecting' ? 'Reconnecting… messages will send when you’re back.' : null;
+  var agentLine = s.view === 'loading' || s.conn === 'closed' ? null : h(H.AgentIndicator, { name: s.agent.name, state: s.agent.state, backAt: s.agent.backAt });
+
+  return h('div', { className: 'proto' }, chrome,
+    h('div', { className: 'stage' },
+      h('div', { className: 'col' },
+        h(H.ThreadHeader, { title: 'Launch post', connection: s.conn, members: MEMBERS, agent: s.agent, onOpenDetails: function () { setDetails(!details); } }),
+        banner ? h('div', { className: 'banner', role: 'status' }, banner) : null,
+        h('div', { className: 'thread', role: 'log', 'aria-label': 'Messages' }, thread),
+        h('div', { className: 'foot' }, h('div', { className: 'foot-inner' }, agentLine,
+          h(H.Composer, { state: s.composer, onSend: send, onExport: function () {} })))),
+      details ? h('div', { className: 'side' }, h(H.SessionDetails, { members: MEMBERS, agent: s.agent, onClose: function () { setDetails(false); },
+        onPause: function () { setAgent('paused'); note(ME.split(' ')[0] + ' paused ' + s.agent.name); },
+        onResume: function () { setAgent('following'); note(ME.split(' ')[0] + ' resumed ' + s.agent.name); },
+        onRename: function (n) { patch(function (p) { p.agent = Object.assign({}, p.agent, { name: n }); return p; }); note(ME.split(' ')[0] + ' renamed the AI to ' + n); } })) : null));
+}
+ReactDOM.createRoot(document.getElementById('root')).render(h(App));
+</script>
+</body>
+</html>

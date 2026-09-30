@@ -1,0 +1,79 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [master]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  python:
+    name: test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    services:
+      postgres:
+        image: postgres:16
+        env: {POSTGRES_PASSWORD: postgres}
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 5s --health-timeout 5s --health-retries 10
+      redis:
+        image: redis:7
+        ports: ["6379:6379"]
+        options: >-
+          --health-cmd "redis-cli ping" --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      HUDDLE_REQUIRE_STORES: "1"   # unreachable stores fail integration tests instead of skipping
+      HUDDLE_TEST_POSTGRES_DSN: postgresql://postgres:postgres@localhost:5432/postgres
+      HUDDLE_TEST_REDIS_URL: redis://localhost:6379/0
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+      - run: uv sync --frozen
+      # All legs run even if one fails, so one round trip surfaces every failure.
+      - id: format
+        run: uv run ruff format --check .
+        continue-on-error: true
+      - id: lint
+        run: uv run ruff check .
+        continue-on-error: true
+      - id: bandit
+        run: uv run bandit -c pyproject.toml -r libs services -q
+        continue-on-error: true
+      - id: pyright
+        run: uv run pyright
+        continue-on-error: true
+      - id: pytest
+        run: uv run pytest --cov=libs --cov=services --cov-report=term-missing
+        continue-on-error: true
+      - id: index
+        run: uv run python scripts/check_index.py
+        continue-on-error: true
+      - name: Gate
+        env:
+          RESULTS: ${{ steps.format.outcome }} ${{ steps.lint.outcome }} ${{ steps.bandit.outcome }} ${{ steps.pyright.outcome }} ${{ steps.pytest.outcome }} ${{ steps.index.outcome }}
+        run: |
+          echo "format lint bandit pyright pytest index: $RESULTS"
+          case "$RESULTS" in *failure*) exit 1;; esac
+  web:
+    name: web
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Skip if the web app is not scaffolded
+        id: has
+        run: test -f apps/web/package.json && echo "yes=true" >> "$GITHUB_OUTPUT" || echo "yes=false" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        if: steps.has.outputs.yes == 'true'
+        with: {node-version: 22, cache: npm, cache-dependency-path: apps/web/package-lock.json}
+      - if: steps.has.outputs.yes == 'true'
+        working-directory: apps/web
+        run: npm ci && npm run lint && npm run typecheck && npm test && npm run build

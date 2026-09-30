@@ -1,0 +1,24 @@
+<!-- @dsCard group="Chat" height=420 -->
+<!doctype html>
+<html>
+<head><meta charset="utf-8"><title>Composer preview</title>
+<style>body{margin:0;background:var(--paper);color:var(--ink);font-family:var(--font-sans);} #root{padding:var(--space-4);} .stack{display:flex;flex-direction:column;gap:var(--space-3);} .row{display:flex;gap:var(--space-3);align-items:center;flex-wrap:wrap;} .cap{font-size:11px;line-height:16px;font-weight:500;letter-spacing:.02em;color:var(--ink-muted);margin:var(--space-2) 0 var(--space-1);} </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+  var H = window.Huddle, h = React.createElement;
+ReactDOM.createRoot(document.getElementById('root')).render(
+    h('div', { className: 'stack', style: { maxWidth: '640px' } },
+      h('div', { className: 'cap' }, 'Ready'),
+      h(H.Composer, null),
+      h('div', { className: 'cap' }, 'Connecting'),
+      h(H.Composer, { state: 'connecting' }),
+      h('div', { className: 'cap' }, 'Reconnecting'),
+      h(H.Composer, { state: 'reconnecting' }),
+      h('div', { className: 'cap' }, 'Huddle ended'),
+      h(H.Composer, { state: 'closed', onExport: function () {} }),
+      h('div', { className: 'cap' }, 'Type past 3,600 characters to see the counter; past 4,000 it turns red and Send switches off')));
+</script>
+</body>
+</html>
