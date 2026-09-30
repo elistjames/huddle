@@ -49,8 +49,8 @@ async def wait_http(url: str) -> None:
     raise SystemExit(f"timeout waiting for {url}")
 
 
-async def recv_until(ws: Any, pred: Any, timeout: float = 5.0) -> dict[str, Any]:
-    end = time.monotonic() + timeout
+async def recv_until(ws: Any, pred: Any, wait_s: float = 5.0) -> dict[str, Any]:
+    end = time.monotonic() + wait_s
     while time.monotonic() < end:
         raw = await asyncio.wait_for(ws.recv(), end - time.monotonic())
         f = json.loads(raw)
