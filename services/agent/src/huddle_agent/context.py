@@ -222,10 +222,16 @@ def decider_prompt(
             "something new: a missing fact, a different angle, a summary of a tangle, or an "
             "answer to a question nobody has answered. Stay silent for greetings, "
             "acknowledgements and small talk between people, and when people are already "
-            "handling it."
+            'handling it. A question that someone answered with "I don\'t know", or that '
+            "people are stuck on, is not handled: speak if you can help. When only one person "
+            "is talking to you, they are talking to you."
         )
         if mentioned:
-            task += f" Someone addressed {agent_name} by name; answer if a reply is expected."
+            task += (
+                f' Someone is talking to {agent_name} (by name, or as "the AI"). They '
+                "expect a reply: answer them, even briefly, unless it is only a greeting "
+                "or thanks."
+            )
         if encourage:
             task += (
                 f" {agent_name} has been quiet for a while; lean toward speaking if you have "

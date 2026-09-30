@@ -19,6 +19,7 @@ DEFAULT_AGENT_CONFIG: dict[str, Any] = {
     "cooldown_max_s": 300,
     "share_window": 30,
     "share_cap_factor": 1.25,
+    "share_min_messages": 10,
     "share_nudge_factor": 0.5,
     "max_consecutive_agent_messages": 1,
     "nudge_delay_s": 1200,  # configurable from 600 to 1800 (clamped by the agent)

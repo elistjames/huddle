@@ -11,10 +11,10 @@ from datetime import UTC, datetime
 
 DEFAULT_CAPACITY_TOKENS = 500_000
 DEFAULT_WINDOW_SECONDS = 86_400
-# One full turn = decider (700 in + 50 out) + writer (2.5k in + 300 out), D-021. These are the
+# One full turn = decider (1k in + 50 out) + writer (2.5k in + 300 out), D-021. These are the
 # agent's default input caps (services/agent PolicyConfig); the Deep Dive §5 ceilings (4k/12k) are
 # upper bounds, and resting is decided against the caps actually used.
-FULL_TURN_TOKENS = 700 + 50 + 2_500 + 300
+FULL_TURN_TOKENS = 1_000 + 50 + 2_500 + 300
 
 
 def window_start(now: datetime, window_seconds: int) -> datetime:

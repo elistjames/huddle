@@ -32,6 +32,7 @@ class PolicyConfig:
     engagement_window: int = 3  # an agent message is unengaged if the next 3 messages ignore it
     share_window: int = 30
     share_cap_factor: float = 1.25
+    share_min_messages: int = 10  # D-022: no share cap until the window has this many messages
     share_nudge_factor: float = 0.5
     max_consecutive_agent_messages: int = 1
     nudge_delay_s: float = 20 * 60
@@ -43,7 +44,7 @@ class PolicyConfig:
     fold_threshold_tokens: int = 12_000
     fold_fraction: float = 0.8
     summary_max_tokens: int = 1_000
-    decider_max_input_tokens: int = 700
+    decider_max_input_tokens: int = 1_000
     writer_max_input_tokens: int = 2_500
     decider_max_output_tokens: int = 50
     writer_max_output_tokens: int = 300
