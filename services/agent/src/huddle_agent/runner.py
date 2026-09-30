@@ -620,6 +620,17 @@ class RunExecutor:
         self, rc: _Run, snap: GateSnapshot, gate: GateResult, ctx: ContextWindow
     ) -> Decision:
         policy, agent = rc.policy, rc.agent
+        if rc.kind != TriggerKind.NUDGE and (gate.mentioned or gate.answering):
+            # D-023: someone is talking to the agent (by name, or by answering its question). That
+            # is a turn it takes: no decider call, straight to the writer. A 3B decider kept
+            # saying "people are handling it" to exactly these messages in manual testing.
+            reason = (
+                "someone addressed you directly; answer them"
+                if gate.mentioned
+                else "someone answered your question; respond to what they said"
+            )
+            rc.log("agent_decision", speak=True, forced=True, seq=ctx.context_seq)
+            return Decision(True, reason, Usage(self._s.decider_model, 0, 0))
         lull_minutes = 0
         last_human = snap.session.last_human_message_at
         if last_human is not None:

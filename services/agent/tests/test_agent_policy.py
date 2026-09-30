@@ -487,3 +487,49 @@ def test_no_share_cap_in_a_short_chat() -> None:
     ]
     long_chat.append(msg(10, "usr_bob", "what about the venue?", at=T0))
     assert gate(long_chat, n=3).skip_reason == SkipReason.SHARE_CAP
+
+
+def test_answering_the_agents_question_is_a_turn_even_when_trivial_or_in_cooldown() -> None:
+    """QA: the agent asked a question, the person answered, and the agent stayed silent."""
+    recent = [
+        *pad(),
+        msg(1, "usr_alice", "I am not sure", at=T0),
+        msg(
+            2,
+            "agent",
+            "Was it a specific topic or a general suggestion?",
+            at=T0 + timedelta(seconds=1),
+        ),
+        msg(3, "usr_alice", "general suggestion", at=T0 + timedelta(seconds=3)),
+    ]
+    r = gate(recent, n=3, now=T0 + timedelta(seconds=6))
+    assert r.eligible and r.answering and not r.mentioned
+    # "yes" is an answer, not small talk
+    yes = [*recent[:-1], msg(3, "usr_alice", "yes", at=T0 + timedelta(seconds=3))]
+    assert gate(yes, n=3, now=T0 + timedelta(seconds=6)).answering
+    assert gate(yes, n=3, now=T0 + timedelta(seconds=6)).skip_reason is None
+
+
+def test_a_reply_to_a_statement_is_not_an_answer() -> None:
+    recent = [
+        *pad(),
+        msg(1, "agent", "One angle: check the numbers first.", at=T0),
+        msg(2, "usr_alice", "thanks", at=T0 + timedelta(seconds=3)),
+    ]
+    r = gate(recent, n=3, now=T0 + timedelta(seconds=6))
+    assert not r.answering and r.skip_reason == SkipReason.TRIVIAL
+
+
+def test_an_old_agent_question_is_not_answered_by_later_chatter() -> None:
+    recent = [
+        *pad(),
+        msg(1, "agent", "Which venue?", at=T0),
+        msg(2, "usr_alice", "a", at=T0 + timedelta(seconds=1)),
+        msg(3, "usr_bob", "b", at=T0 + timedelta(seconds=2)),
+        msg(4, "usr_alice", "c", at=T0 + timedelta(seconds=3)),
+        msg(5, "usr_bob", "unrelated chatter", at=T0 + timedelta(seconds=4)),
+    ]
+    from huddle_agent.policy import answers_agent_question
+
+    assert answers_agent_question(recent, AGENT.id)  # a person replied within three messages
+    assert not answers_agent_question([*pad(), msg(1, "agent", "Which venue?", at=T0)], AGENT.id)

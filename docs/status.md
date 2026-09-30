@@ -22,3 +22,6 @@ Left open (owner decision): unlimited guest join (`/auth/guest` has no rate limi
 
 ## Agent tuning from manual QA (D-022)
 Two humans chatting with Huddle AI got no reply, even to "Hey huddle are you there?" and "Maybe the AI has an idea". Changes: short-name and "the AI" mentions (context-aware, so "the huddle was fun" does not count), no share cap until the window has 10 messages, a decider prompt that answers when addressed or when a question met "I don't know", and a 1,000-token decider input cap (1,500 fit worse: a 500-message session used the whole 500k window and rested). Still only tested against the scripted model: whether the real 3B decider now says yes to these cases needs another run on Ollama. If it still declines, the next lever is a deterministic rule: always answer a direct mention.
+
+## Follow-up QA (D-023)
+The agent asked Eli a question, Eli answered ("general suggestion"), and the agent stayed silent. It also wrote about Eli in the third person to Eli. Fix: answering a question the agent asked, or addressing it by name, now skips the decider (gate-level rule; "yes" counts as an answer), and the writer prompt speaks in the first person to people and builds on their answer. The deterministic part is tested; whether the real writer now reads well still needs another run on Ollama.

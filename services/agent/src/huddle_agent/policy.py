@@ -54,6 +54,8 @@ class GateResult:
     skip_reason: SkipReason | None = None
     encourage: bool = False  # share below 0.5 x 1/N: nudge the decider toward speaking
     mentioned: bool = False
+    # A person answered a question the agent asked (D-023): a conversation turn it should take.
+    answering: bool = False
     share: float = 0.0
     cooldown_s: float = 0.0
 
@@ -269,6 +271,22 @@ def _human_replied_to(
     return bool(after) and after[-1].is_human and is_engaged(agent_msg, after[-1:], agent_name)
 
 
+def answers_agent_question(recent: Sequence[ChatMessage], agent_id: str) -> bool:
+    """The agent's latest message asked a question and a person has posted since (D-023).
+
+    Within the next three messages counts: a person who answers late is still answering, and the
+    agent is the only one who asked. The agent's last message must still be its latest one."""
+    last_index = None
+    for i in range(len(recent) - 1, -1, -1):
+        m = recent[i]
+        if m.sender_type == SenderType.AGENT and m.sender_id == agent_id and m.is_text:
+            last_index = i
+            break
+    if last_index is None or "?" not in (recent[last_index].body or ""):
+        return False
+    return any(m.is_human for m in recent[last_index + 1 : last_index + 4])
+
+
 # ---- the gate -------------------------------------------------------------------------------
 
 
@@ -303,9 +321,12 @@ def evaluate_gate(
     if not humans or humans[-1].seq <= snap.last_evaluated_seq:
         return _skip(SkipReason.ALREADY_EVALUATED)
 
-    # D-021: a batch of only greetings/acknowledgements is not worth a decider call.
+    answering = answers_agent_question(recent, snap.agent.id)
+
+    # D-021: a batch of only greetings/acknowledgements is not worth a decider call. Not when
+    # the agent was just asked something, or asked something itself: "yes" is an answer (D-023).
     fresh = [m for m in humans if m.seq > snap.last_evaluated_seq]
-    if fresh and all(is_trivial(m.body) for m in fresh):
+    if fresh and not answering and all(is_trivial(m.body) for m in fresh):
         if not any(mentions_agent(m.body, snap.agent.name) for m in fresh):
             return _skip(SkipReason.TRIVIAL)
 
@@ -323,7 +344,7 @@ def evaluate_gate(
     # 1/N rule (D-006) fight and a quiet chat starves the agent. The share cap still bounds it.
     cooldown = effective_cooldown(0 if share < 1 / n else streak, policy)
 
-    if not mentioned:
+    if not (mentioned or answering):
         last = snap.last_agent_message
         # D-021: a human reply that engages the agent's last message is aimed at the agent, like
         # a direct mention, so it is answered without waiting out the cooldown. The share cap
@@ -343,6 +364,7 @@ def evaluate_gate(
         eligible=True,
         encourage=share < policy.share_nudge_factor / n,
         mentioned=mentioned,
+        answering=answering,
         share=share,
         cooldown_s=cooldown,
     )

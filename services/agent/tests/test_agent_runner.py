@@ -643,3 +643,32 @@ def test_agent_name_is_sanitised_in_every_prompt() -> None:
     prompt = system_prompt(evil)
     assert f"You are {clean}, " in prompt
     assert evil not in prompt
+
+
+async def test_direct_mention_and_answers_skip_the_decider_and_reach_the_writer(
+    world: MemoryWorld, model: ScriptedModel, executor: RunExecutor
+) -> None:
+    """D-023: no decider call when someone is talking to the agent; the writer answers."""
+    for _ in range(8):
+        world.post_human("usr_alice", "we should look at the plan")
+    ask(world, "Hey huddle are you there?")
+    model.script(Stage.WRITE, "Yes, I'm here. What do you want to decide?")
+    out = await executor.execute(world.session_id)
+    assert out.status == RunStatus.OBSERVED
+    assert [c.stage for c in model.calls if c.stage == Stage.DECIDE] == []
+    assert world.agent_messages()[0].body == "Yes, I'm here. What do you want to decide?"
+
+
+async def test_answering_the_agents_question_gets_a_reply_without_a_decider_call(
+    world: MemoryWorld, clock: FakeClock, model: ScriptedModel, executor: RunExecutor
+) -> None:
+    for _ in range(8):
+        world.post_human("usr_alice", "we should look at the plan")
+    world.post_agent("Was it a specific topic or a general suggestion?")
+    clock.advance(3)
+    world.post_human("usr_alice", "general suggestion")
+    model.script(Stage.WRITE, "Then let's pick the venue first. Any favourites?")
+    out = await executor.execute(world.session_id)
+    assert out.status == RunStatus.OBSERVED
+    assert not [c for c in model.calls if c.stage == Stage.DECIDE]
+    assert len(world.agent_messages()) == 2

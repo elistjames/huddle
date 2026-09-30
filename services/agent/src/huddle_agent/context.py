@@ -268,7 +268,12 @@ def writer_prompt(
     )
     rules = (
         f"At most 3 sentences and about {policy.target_chars} characters. Plain text only, no "
-        f"name prefix, no quotes around the message. Why you are speaking: {_neutralize(reason)}"
+        f"name prefix, no quotes around the message. Write in the first person, to the people "
+        f'in the chat: say "you" to the person you are answering, never talk about them in '
+        f"the third person. Answer what was asked and add something concrete. If someone "
+        f"answered your question, use their answer and move the conversation forward; do not "
+        f"ask them what they meant unless it is truly unclear. "
+        f"Why you are speaking: {_neutralize(reason)}"
     )
     if too_long:
         rules += f" Your previous draft was too long: stay well under {policy.target_chars} chars."
