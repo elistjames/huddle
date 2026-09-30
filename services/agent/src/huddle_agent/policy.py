@@ -40,7 +40,7 @@ class SkipReason(StrEnum):
 
 # Skip reasons that mean the agent is inactive: its read cursor must not advance (D-020).
 INACTIVE_REASONS: dict[SkipReason, AgentState] = {
-    SkipReason.DISABLED: AgentState.PAUSED,
+    SkipReason.DISABLED: AgentState.AWAY,  # kill switch: users cannot resume it
     SkipReason.PAUSED: AgentState.PAUSED,
     SkipReason.REMOVED: AgentState.PAUSED,
     SkipReason.RESTING: AgentState.RESTING,

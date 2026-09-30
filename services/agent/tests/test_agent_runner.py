@@ -68,7 +68,8 @@ async def test_speaks_through_the_single_write_path(
     assert row.output_message_id == agent_msg.id
     assert row.input_tokens > 0 and row.output_tokens > 0
     assert row.latency_ms is not None
-    assert world.usage == [(world.session_id, out.run_id, row.input_tokens + row.output_tokens)]
+    assert [u[1] for u in world.usage] == [out.run_id] * 3  # one debit per model call
+    assert sum(u[2] for u in world.usage) == row.input_tokens + row.output_tokens
 
 
 async def test_decider_declines(
@@ -222,7 +223,9 @@ async def test_paused_mid_run_cancels_before_commit(
     out = await executor.execute(world.session_id)
     assert out.status == RunStatus.CANCELLED and out.error_code == "paused"
     assert world.agent_messages() == []
-    assert world.states()[-1] == AgentState.PAUSED
+    assert executor.presence.get(world.session_id) == AgentState.PAUSED
+    # paused is chat-owned (not PUT), but the stale 'writing' is cleared first
+    assert world.states() == [AgentState.WRITING, AgentState.FOLLOWING]
 
 
 async def test_session_closed_at_commit_cancels_and_still_debits(
@@ -260,7 +263,8 @@ async def test_paused_agent_does_not_run_or_advance_cursor(
     out = await executor.execute(world.session_id)
     assert out.skip_reason == "paused"
     assert model.calls == []
-    assert world.states() == [AgentState.PAUSED]
+    assert executor.presence.get(world.session_id) == AgentState.PAUSED
+    assert world.states() == []  # chat derives paused itself
     assert world.agent_cursor() == 0 and world.acks == []
 
 
@@ -271,7 +275,8 @@ async def test_resting_when_budget_short(
     ask(world, "Huddle AI, are you there?")
     out = await executor.execute(world.session_id)
     assert out.skip_reason == "resting"
-    assert world.states() == [AgentState.RESTING]
+    assert executor.presence.get(world.session_id) == AgentState.RESTING
+    assert world.states() == []  # chat derives resting from the budget itself
     assert model.calls == [] and world.acks == []
 
 
@@ -286,7 +291,7 @@ async def test_budget_refill_returns_to_following(
     ask(world, "and now?")
     model.script(Stage.DECIDE, False)
     await executor.execute(world.session_id)
-    assert world.states() == [AgentState.RESTING, AgentState.FOLLOWING]
+    assert world.states() == [AgentState.FOLLOWING]
     assert world.agent_cursor() == 2
 
 
@@ -295,7 +300,7 @@ async def test_kill_switch(world: MemoryWorld, model: ScriptedModel) -> None:
     ask(world)
     out = await ex.execute(world.session_id)
     assert out.skip_reason == "disabled"
-    assert world.states() == [AgentState.PAUSED] and model.calls == []
+    assert world.states() == [AgentState.AWAY] and model.calls == []
 
 
 async def test_unreachable_model_shows_away_then_recovers(
@@ -487,7 +492,7 @@ async def test_fold_writes_a_summary_and_debits_summarizer_tokens(
     decide = model.calls[1]
     assert decide.messages[0].seq == summary.covers_through_seq + 1
     assert 11 <= summary.covers_through_seq <= 12  # oldest ~80% folded
-    assert world.usage[0][2] == sum(
+    assert sum(u[2] for u in world.usage) == sum(
         c
         for c in (
             world.runs[world.usage[0][1]].input_tokens,

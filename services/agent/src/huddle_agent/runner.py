@@ -248,7 +248,6 @@ class RunExecutor:
             renewer.cancel()
             with contextlib.suppress(asyncio.CancelledError):
                 await renewer
-            await self._debit(rc)
         outcome.took_over = took_over
         return outcome
 
@@ -260,7 +259,10 @@ class RunExecutor:
         if snap is None or snap.session.status != "active":
             return None
         agent = snap.agent
-        if self._s.agents_disabled or agent.status != "active":
+        if self._s.agents_disabled:
+            await self.presence.set(session_id, AgentState.AWAY)
+            return AgentState.AWAY
+        if agent.status != "active":
             await self.presence.set(session_id, AgentState.PAUSED)
             return AgentState.PAUSED
         try:
@@ -398,8 +400,12 @@ class RunExecutor:
             cancel = self._cancel_reason(fresh)
             if fresh is None or cancel is not None:
                 cancel = cancel or "removed"
-                paused = cancel in ("paused", "removed", "disabled")
-                await self.presence.set(sid, AgentState.PAUSED if paused else AgentState.FOLLOWING)
+                state = {
+                    "paused": AgentState.PAUSED,
+                    "removed": AgentState.PAUSED,
+                    "disabled": AgentState.AWAY,
+                }.get(cancel, AgentState.FOLLOWING)
+                await self.presence.set(sid, state)
                 return await self._finish(rc, RunStatus.CANCELLED, error_code=cancel)
 
             latest_human = await self._store.latest_human_seq(sid)
@@ -687,6 +693,7 @@ class RunExecutor:
                 rc.input_tokens += u.input_tokens
                 rc.output_tokens += u.output_tokens
                 rc.model = u.model
+                await self._debit(rc, u)
                 rc.log(
                     "model_call",
                     stage=stage,
@@ -787,15 +794,16 @@ class RunExecutor:
             error_code=error_code,
         )
 
-    async def _debit(self, rc: _Run) -> None:
-        """Every model call's tokens are debited, whatever the run's outcome (Deep Dive §5, §7)."""
-        total = rc.input_tokens + rc.output_tokens
-        if total <= 0:
+    async def _debit(self, rc: _Run, usage: Usage) -> None:
+        """Debit each model call's tokens as soon as it returns, whatever the run's outcome
+        (Deep Dive §5 "Every model call ... adds its tokens", §7). The usage endpoint is not
+        idempotent, so the client never retries it after the request may have been sent."""
+        if usage.total <= 0:
             return
         try:
-            await self._chat.record_usage(rc.session_id, rc.run.id, total)
+            await self._chat.record_usage(rc.session_id, rc.run.id, usage.total)
         except ChatError as exc:
-            rc.log("usage_debit_failed", tokens=total, code=exc.code)
+            rc.log("usage_debit_failed", tokens=usage.total, code=exc.code)
 
     async def _ack(self, session_id: str, agent_id: str, seq: int, *, trace_id: str | None) -> None:
         """Advance the agent's read cursor (the amber tick). Never while inactive (D-020)."""

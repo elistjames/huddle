@@ -60,10 +60,10 @@ def humans(
 # ---- inactive states and the budget threshold -----------------------------------------------
 
 
-def test_kill_switch_skips_and_shows_paused() -> None:
+def test_kill_switch_skips_and_shows_away() -> None:
     r = gate([msg(1, "usr_alice")], disabled=True)
     assert r.skip_reason == SkipReason.DISABLED
-    assert r.inactive_state == AgentState.PAUSED
+    assert r.inactive_state == AgentState.AWAY  # users cannot resume an operator kill switch
 
 
 @pytest.mark.parametrize(

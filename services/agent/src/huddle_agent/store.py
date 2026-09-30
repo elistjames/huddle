@@ -19,7 +19,6 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncConnection, AsyncEngine, create_async_engine
-from ulid import ULID
 
 from huddle_agent.context import message_tokens
 from huddle_agent.domain import (
@@ -101,9 +100,9 @@ agent_runs = sa.table(
     sa.column("created_at", sa.DateTime(timezone=True)),
     sa.column("updated_at", sa.DateTime(timezone=True)),
 )
+# `id` (an identity column) and `created_at` have server defaults; the agent never sets them.
 session_summaries = sa.table(
     "session_summaries",
-    sa.column("id", sa.Text),
     sa.column("session_id", sa.Text),
     sa.column("agent_id", sa.Text),
     sa.column("covers_through_seq", sa.BigInteger),
@@ -535,10 +534,6 @@ class PostgresStore:
             "token_count": summary.token_count,
             "model": summary.model,
         }
-        if self._has("session_summaries", "id"):
-            values["id"] = f"sum_{ULID()}"
-        if self._has("session_summaries", "created_at"):
-            values["created_at"] = sa.func.now()
         async with self._engine.begin() as conn:
             await conn.execute(sa.insert(session_summaries).values(**values))
 

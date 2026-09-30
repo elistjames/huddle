@@ -92,20 +92,30 @@ class HttpChatClient:
     # ---- plumbing -------------------------------------------------------------------------
 
     @staticmethod
-    def _error(resp: httpx.Response) -> ChatError:
+    def _retry_after_header(resp: httpx.Response) -> int | None:
+        raw = resp.headers.get("Retry-After")
+        try:
+            return int(float(raw) * 1000) if raw else None
+        except ValueError:
+            return None  # an HTTP-date; fall back to the body or our own backoff
+
+    @classmethod
+    def _error(cls, resp: httpx.Response) -> ChatError:
+        header_ms = cls._retry_after_header(resp)
         try:
             err = SubmitMessageError.model_validate(resp.json()).error
             return ChatError(
                 err.code.value,
                 retryable=err.retryable,
                 status=resp.status_code,
-                retry_after_ms=err.retry_after_ms,
+                retry_after_ms=err.retry_after_ms or header_ms,
             )
         except (ValueError, ValidationError):
             return ChatError(
                 ErrorCode.INTERNAL.value,
                 retryable=resp.status_code >= 500 or resp.status_code == 429,
                 status=resp.status_code,
+                retry_after_ms=header_ms,
             )
 
     async def _request(
