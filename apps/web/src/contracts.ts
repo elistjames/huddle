@@ -224,6 +224,13 @@ export type ServerFrame =
   | ErrorFrame
   | PongFrame;
 
+/** A server frame without its `v` (distributes over the union). */
+export type ServerFrameInput = ServerFrame extends infer F
+  ? F extends ServerFrame
+    ? Omit<F, "v">
+    : never
+  : never;
+
 export const SERVER_FRAME_TYPES: ReadonlySet<string> = new Set<ServerFrame["type"]>([
   "auth.ok",
   "message.ack",

@@ -19,6 +19,7 @@ import {
   type MemberView,
   type Message,
   type ServerFrame,
+  type ServerFrameInput,
   type SessionView,
   type TokenResponse,
 } from "../contracts";
@@ -79,7 +80,7 @@ function unb64url(s: string): string {
   return atob(b.padEnd(b.length + ((4 - (b.length % 4)) % 4), "="));
 }
 
-function frame<T extends Omit<ServerFrame, "v">>(f: T): T & { v: number } {
+function frame<T extends ServerFrameInput>(f: T): T & { v: number } {
   return { v: PROTOCOL_VERSION, ...f };
 }
 
