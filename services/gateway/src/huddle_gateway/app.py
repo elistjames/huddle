@@ -12,6 +12,7 @@ from redis.asyncio import Redis
 
 from huddle_gateway.config import Settings
 from huddle_gateway.gateway import Gateway
+from huddle_gateway.logs import quiet_frame_tracing
 
 
 def create_app(
@@ -20,6 +21,7 @@ def create_app(
     redis: Redis | None = None,
     chat_transport: httpx.AsyncBaseTransport | None = None,
 ) -> FastAPI:
+    quiet_frame_tracing()  # §9: message bodies never reach logs, even at DEBUG
     gateway = Gateway(settings, redis=redis, chat_transport=chat_transport)
 
     @asynccontextmanager

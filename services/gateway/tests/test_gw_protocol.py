@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import json
+import logging
 import re
 
 import httpx
@@ -19,6 +21,7 @@ from gw_support import (
 
 from huddle_contracts.errors import ErrorBody, ErrorCode
 from huddle_contracts.models import MAX_BODY_CHARS
+from huddle_gateway.logs import JsonFormatter
 
 pytestmark = pytest.mark.integration
 
@@ -66,7 +69,7 @@ async def test_invalid_token_closes(redis_url: str) -> None:
     chat = FakeChat()
     async with running_gateway(gw_settings(redis_url), chat) as gw:
         c = await Client.open(gw.ws_url)
-        bad = make_token(uid(), secret="another-secret-that-is-long-enough-for-hs256")
+        bad = make_token(uid(), secret="another-secret-" + "z" * 64)
         await c.send({"type": "auth", "token": bad, "device_id": "d"})
         code, frames = await c.closed()
         assert frames[0]["error"]["code"] == "UNAUTHENTICATED"
@@ -344,3 +347,33 @@ async def test_max_five_connections_per_user(redis_url: str) -> None:
         assert (await again.auth(user, device_id="d7"))["type"] == "auth.ok"
         for c in [*clients[1:], again]:
             await c.close()
+
+
+async def test_logs_never_contain_message_bodies(
+    redis_url: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    chat = FakeChat()
+    user = uid()
+    chat.add_member(user)
+    secret_body = "top-secret-body-7f3a"
+    caplog.set_level(logging.DEBUG)
+    async with running_gateway(gw_settings(redis_url), chat) as gw:
+        c = await Client.open(gw.ws_url)
+        await c.auth(user)
+        await c.subscribe()
+        await c.send({"type": "message.send", "client_msg_id": "m", "body": secret_body})
+        await c.recv_type("message.ack")
+        chat.submit_error = (503, ErrorBody.of(ErrorCode.PERSISTENCE_UNAVAILABLE))
+        await c.send({"type": "message.send", "client_msg_id": "n", "body": secret_body})
+        await c.recv_type("error")
+        await c.close()
+    formatter = JsonFormatter()
+    # Everything the server process logged; the test's own websockets client is not the gateway.
+    server_records = [r for r in caplog.records if not r.name.startswith("websockets.client")]
+    lines = [formatter.format(r) for r in server_records]
+    assert not any(secret_body in line for line in lines)
+    sent = [json.loads(line) for line in lines if '"message.sent"' in line]
+    assert len(sent) == 1
+    assert sent[0]["actor_id"] == user and sent[0]["seq"] == 1
+    assert sent[0]["message_id"] == "msg_00000001" and sent[0]["session_id"] == SESSION
+    assert len(sent[0]["trace_id"]) == 32 and sent[0]["latency_ms"] is not None

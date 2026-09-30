@@ -47,6 +47,18 @@ def log_event(event: str, *, level: int = logging.INFO, **fields: Any) -> None:
     logger.log(level, event, extra={_FIELDS_ATTR: fields})
 
 
+# uvicorn hands "uvicorn.error" to the websockets protocol, which traces every frame (bodies
+# included) at DEBUG. Those loggers never go below INFO, whatever the root level.
+_FRAME_TRACING_LOGGERS = ("uvicorn.error", "websockets")
+
+
+def quiet_frame_tracing() -> None:
+    for name in _FRAME_TRACING_LOGGERS:
+        lg = logging.getLogger(name)
+        if lg.getEffectiveLevel() < logging.INFO:
+            lg.setLevel(logging.INFO)
+
+
 def configure(level: int = logging.INFO) -> None:
     """Route the gateway's and uvicorn's loggers through one JSON handler on stdout."""
     handler = logging.StreamHandler(sys.stdout)
@@ -58,3 +70,4 @@ def configure(level: int = logging.INFO) -> None:
         lg = logging.getLogger(name)
         lg.handlers[:] = []
         lg.propagate = True
+    quiet_frame_tracing()

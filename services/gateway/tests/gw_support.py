@@ -45,7 +45,7 @@ from huddle_gateway.app import create_app, gateway_of
 from huddle_gateway.config import Settings
 from huddle_gateway.gateway import Gateway
 
-JWT_SECRET = "test-jwt-secret-with-enough-bytes-for-hs256"
+JWT_SECRET = "test-jwt-secret-" + "0123456789abcdef" * 4  # 80 bytes: fine even for HS512
 SERVICE_TOKEN = "test-service-token"
 SESSION = "ses_main"
 
@@ -57,6 +57,10 @@ def uid(prefix: str = "usr") -> str:
 def make_token(sub: str, *, exp_in: float = 900, secret: str = JWT_SECRET, **claims: Any) -> str:
     payload: dict[str, Any] = {"sub": sub, "exp": int(time.time() + exp_in), **claims}
     return jwt.encode(payload, secret, algorithm="HS256")  # pyright: ignore[reportUnknownMemberType]
+
+
+def raw_token(payload: dict[str, Any], key: str | None, algorithm: str) -> str:
+    return jwt.encode(payload, key, algorithm=algorithm)  # pyright: ignore[reportUnknownMemberType, reportArgumentType]
 
 
 def make_message(session_id: str, seq: int, sender_id: str = "usr_other") -> Message:
