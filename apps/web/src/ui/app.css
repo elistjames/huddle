@@ -1,0 +1,42 @@
+/* App layout around the design-system components. Every value comes from design/tokens.css;
+   components themselves are never restyled. Layout follows design/components/HuddleScreen. */
+
+html, body { margin: 0; height: 100%; }
+body { background: var(--paper); color: var(--ink); font-family: var(--font-sans); }
+#root { height: 100%; }
+
+.app { height: 100%; display: flex; flex-direction: column; background: var(--paper); }
+.stage { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr auto; position: relative; }
+.col { display: flex; flex-direction: column; min-width: 0; min-height: 0; }
+.thread { flex: 1; overflow: auto; padding: var(--space-4) var(--space-6); }
+.thread-inner { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-4); }
+.earlier { align-self: center; }
+.foot { padding: 0 var(--space-6) var(--space-4); }
+.foot-inner { max-width: 720px; margin: 0 auto; display: flex; flex-direction: column; gap: var(--space-2); }
+.center { flex: 1; display: flex; align-items: center; justify-content: center; padding: var(--space-6); }
+.card { width: 340px; max-width: 100%; display: flex; flex-direction: column; gap: var(--space-2); }
+.banner { padding: var(--space-2) var(--space-6); font-size: 13px; line-height: 18px; color: var(--ink-muted); background: var(--paper-sunken); border-bottom: 1px solid var(--line); text-align: center; }
+.join-error { margin: 0; font-size: 13px; line-height: 18px; color: var(--danger); text-align: center; }
+
+/* Details panel: SessionDetails plus the percentage budget section, one column. The inset line
+   sits under SessionDetails' own left border so the edge reads as a single hairline. */
+.side { width: 320px; display: flex; flex-direction: column; background: var(--paper-raised); box-shadow: inset 1px 0 0 var(--line); overflow: auto; min-height: 0; }
+
+/* Code inside messages (type scale "code" 13/20 mono, design/README.md). */
+.msg-code { font-family: var(--font-mono); font-size: 13px; line-height: 20px; padding: 0 var(--space-1); border-radius: var(--radius-sm); background: var(--paper-sunken); color: var(--ink); }
+.msg-pre { margin: var(--space-1) 0; padding: var(--space-2) var(--space-3); border-radius: var(--radius-sm); background: var(--paper-sunken); color: var(--ink); border: 1px solid var(--line); overflow-x: auto; white-space: pre; }
+.msg-pre > code { font-family: var(--font-mono); font-size: 13px; line-height: 20px; }
+
+/* Narrow screens: the details panel overlays the thread instead of squeezing it. */
+@media (max-width: 720px) {
+  .thread { padding: var(--space-4); }
+  .foot { padding: 0 var(--space-4) var(--space-4); }
+  .side { position: absolute; top: 0; right: 0; bottom: 0; width: min(320px, 100%); box-shadow: var(--shadow-pop); z-index: 2; }
+}
+
+/* Dev-only mock controls (npm run dev:mock). */
+.mock-panel { position: fixed; left: var(--space-2); bottom: var(--space-2); z-index: 10; max-width: 260px; display: flex; flex-direction: column; gap: var(--space-1); padding: var(--space-2); background: var(--paper-sunken); border: 1px solid var(--line-strong); border-radius: var(--radius-md); font-size: 11px; line-height: 16px; color: var(--ink-muted); }
+.mock-actions { display: flex; flex-wrap: wrap; gap: var(--space-1); }
+.mock-panel button { font: inherit; color: var(--ink); background: var(--paper-raised); border: 1px solid var(--line-strong); border-radius: var(--radius-sm); padding: 2px var(--space-2); cursor: pointer; }
+.mock-panel .mock-toggle { font-weight: 600; align-self: flex-start; }
+.mock-panel button:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
