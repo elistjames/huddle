@@ -31,8 +31,10 @@ from huddle_contracts.models import AgentView, SenderType, SessionView
 DEFAULT_PUBLIC_PAGE = 50
 
 
-def get_service(request: Request) -> ChatService:
-    service: ChatService = request.app.state.service
+async def get_service(request: Request) -> ChatService:
+    service: ChatService | None = getattr(request.app.state, "service", None)
+    if service is None:
+        raise ChatError(ErrorCode.INTERNAL, "service is starting")
     return service
 
 
@@ -76,7 +78,9 @@ class PatchAgentRequest(BaseModel):
     name: str | None = None
 
 
-def current_user(request: Request, authorization: Annotated[str | None, Header()] = None) -> str:
+async def current_user(
+    request: Request, authorization: Annotated[str | None, Header()] = None
+) -> str:
     token = auth.bearer(authorization)
     if token is None:
         raise ChatError(ErrorCode.UNAUTHENTICATED, "missing bearer token")
@@ -160,7 +164,7 @@ async def patch_agent(
 # ---- internal API (X-Service-Token) --------------------------------------------------------
 
 
-def require_service_token(
+async def require_service_token(
     request: Request, token: Annotated[str | None, Header(alias=SERVICE_TOKEN_HEADER)] = None
 ) -> None:
     settings: Settings = request.app.state.settings
