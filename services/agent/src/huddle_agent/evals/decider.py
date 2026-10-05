@@ -50,7 +50,19 @@ from huddle_agent.runner import RunExecutor, clean_draft
 
 MAX_REPLY_CHARS = 600
 _BAD_STARTS = ("assistant", "system", "user", "huddle ai:", "ai:")
-_BAD_PHRASES = ("as an ai", "i'm just an ai", "<|", "language model")
+_BAD_PHRASES = (
+    "as an ai",
+    "i'm just an ai",
+    "<|",
+    "language model",
+    # Claimed actions the agent cannot take (it only reads the chat and writes a message).
+    "i've checked",
+    "i checked",
+    "i looked up",
+    "i've looked",
+    "i remember",
+    "i'll look into",
+)
 
 
 class RecordingModels:

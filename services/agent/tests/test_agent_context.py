@@ -171,6 +171,23 @@ def test_writer_prompt_limits_length_and_fits_12k() -> None:
     assert prompt_tokens(prompt) <= P.writer_max_input_tokens + 100
 
 
+def test_writer_prompt_grounds_the_reply_and_forbids_claimed_actions() -> None:
+    ctx = ContextWindow(summary=None, messages=[msg(1, "usr_alice", "hey")], context_seq=1)
+    head = str(
+        writer_prompt(
+            ctx,
+            agent_id=AGENT.id,
+            agent_name=AGENT.name,
+            kind=TriggerKind.MESSAGE,
+            reason="addressed",
+            policy=P,
+        )[0].content
+    )
+    assert "never introduce a new topic" in head
+    assert "never claim to have checked" in head
+    assert "ask what they would like help with" in head
+
+
 def test_summarizer_prompt_is_incremental_and_wrapped() -> None:
     prev = Summary(5, "earlier: picked Tuesday", 6, "m")
     prompt = summarizer_prompt(

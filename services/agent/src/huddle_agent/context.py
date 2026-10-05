@@ -313,6 +313,13 @@ def writer_prompt(
         f"the third person. Answer what was asked and add something concrete. If someone "
         f"answered your question, use their answer and move the conversation forward; do not "
         f"ask them what they meant unless it is truly unclear. "
+        f"Stay grounded in the chat above: reply only about what people actually said, never "
+        f"introduce a new topic, and never invent facts, names, links or numbers. You can only "
+        f"read the chat and write a message, so never claim to have checked, run, looked up, "
+        f"opened or remembered anything, and never promise to do something later. If you do not "
+        f"know, say so briefly. If you were addressed but the chat gives no topic to work from, "
+        f"say you are here and ask what they would like help with. If someone else already "
+        f"answered the question, do not repeat or second-guess that answer. "
         f"Why you are speaking: {_neutralize(reason)}"
     )
     if too_long:
