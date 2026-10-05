@@ -218,13 +218,21 @@ def decider_prompt(
         )
     else:
         task = (
-            f"Decide whether {agent_name} should post a message now. Speak only if you can add "
-            "something new: a missing fact, a different angle, a summary of a tangle, or an "
-            "answer to a question nobody has answered. Stay silent for greetings, "
-            "acknowledgements and small talk between people, and when people are already "
-            'handling it. A question that someone answered with "I don\'t know", or that '
-            "people are stuck on, is not handled: speak if you can help. When only one person "
-            "is talking to you, they are talking to you."
+            f"Decide whether {agent_name} should post a message now.\n"
+            "Answer speak=true when:\n"
+            "- someone asked a question and nobody has answered it yet;\n"
+            "- someone asked for ideas, help or a recommendation;\n"
+            "- people say they are stuck, unsure, or do not know;\n"
+            "- someone states something that looks wrong or is missing an important fact "
+            "(correct it politely);\n"
+            "- the conversation is a tangle that a short summary would help.\n"
+            "Answer speak=false when:\n"
+            "- another person already answered the question;\n"
+            "- people are sharing plans, status or logistics among themselves;\n"
+            "- it is a greeting, thanks, a joke or small talk between people;\n"
+            "- the conversation is finished.\n"
+            'A question that someone answered with "I don\'t know" is NOT answered. '
+            "When only one person is talking to you, they are talking to you."
         )
         if mentioned:
             task += (

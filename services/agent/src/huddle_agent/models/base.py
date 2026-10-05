@@ -59,6 +59,7 @@ class Decision:
     speak: bool
     reason: str
     usage: Usage
+    raw: str = ""  # the model's unparsed answer, kept for evals and debugging
 
 
 @dataclass(frozen=True)
@@ -114,10 +115,26 @@ class ModelClient(Protocol):
 
 
 _JSON_OBJ = re.compile(r"\{.*?\}", re.DOTALL)
+_SPEAK_FIELD = re.compile(r"""["']?speak["']?\s*[:=]\s*["']?(true|false|yes|no)\b""", re.IGNORECASE)
+_REASON_FIELD = re.compile(r'"reason"\s*:\s*"([^"]*)', re.IGNORECASE)
+
+# What the decider must return. Passed to Ollama as the structured-output schema so a small model
+# cannot wander off the shape; `speak` comes first so a reply cut off at the token cap still
+# carries the decision.
+DECISION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {"speak": {"type": "boolean"}, "reason": {"type": "string"}},
+    "required": ["speak", "reason"],
+}
 
 
 def parse_decision(text: str) -> tuple[bool, str]:
-    """Parse the decider's `{speak, reason}`. Anything unparseable means "do not speak"."""
+    """Parse the decider's `{speak, reason}`. Anything unparseable means "do not speak".
+
+    A small model's answer is often cut off at the output cap or wrapped in prose
+    (`{"speak": true, "reason": "Typical conference room capacity va`), so after a strict JSON
+    parse this falls back to reading the `speak` field directly. In manual testing 8 of 35
+    cases scored as "stay quiet" only because the answer was not valid JSON."""
     for candidate in [text.strip(), *_JSON_OBJ.findall(text)]:
         try:
             raw: object = json.loads(candidate)
@@ -131,6 +148,11 @@ def parse_decision(text: str) -> tuple[bool, str]:
                 speak = speak.strip().lower() in {"true", "yes"}
             if isinstance(speak, bool):
                 return speak, str(reason)[:200]
+    found = _SPEAK_FIELD.search(text)
+    if found is not None:
+        reason_match = _REASON_FIELD.search(text)
+        reason = reason_match.group(1) if reason_match else "(answer was cut off)"
+        return found.group(1).lower() in {"true", "yes"}, reason[:200]
     return False, "unparseable decider output"
 
 

@@ -16,6 +16,7 @@ import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
 from huddle_agent.models.base import (
+    DECISION_SCHEMA,
     ModelError,
     ModelRequest,
     ModelTimeout,
@@ -95,7 +96,7 @@ async def test_decider_request_shape_and_parsing() -> None:
     assert (d.usage.input_tokens, d.usage.output_tokens) == (321, 12)
     body = fake.requests[0]
     assert body["model"] == "llama3.2:3b"
-    assert body["format"] == "json"
+    assert body["format"] == DECISION_SCHEMA  # structured output: the shape cannot wander
     options = body["options"]
     assert isinstance(options, dict)
     assert options["num_ctx"] == NUM_CTX == 16384  # explicit: Ollama's default would truncate
@@ -173,3 +174,35 @@ async def test_llm_instances_are_cached_per_model_and_mode() -> None:
     assert c.llm("m", 50, json_mode=True, temperature=0.0) is a
     assert c.llm("m", 50, json_mode=False, temperature=0.0) is not a
     assert a.num_ctx == 16384
+
+
+@pytest.mark.parametrize(
+    ("text", "speak"),
+    [
+        # as seen from llama3.2:3b in the real-model eval: valid JSON cut off at the token cap,
+        # or wrapped in prose
+        ('{"speak": true, "reason": "Typical conference room capacity va', True),
+        ('{"speak": false, "reason": "No fact-chec', False),
+        ('Sure! {"speak": true, "reason": "stuck"} Let me know.', True),
+        ('{\n  "speak": true,\n  "reason": "open question"', True),
+        ("speak: true", True),
+        ('{"speak": "yes", "reason": "x"}', True),
+        ('{"speak": "no"}', False),
+    ],
+)
+def test_parse_decision_survives_truncated_and_wrapped_answers(text: str, speak: bool) -> None:
+    from huddle_agent.models.base import parse_decision
+
+    assert parse_decision(text)[0] is speak
+
+
+@pytest.mark.parametrize("text", ["", "I think so", "{}", '{"reason": "no verdict"}', "maybe"])
+def test_parse_decision_without_a_verdict_stays_quiet(text: str) -> None:
+    from huddle_agent.models.base import parse_decision
+
+    assert parse_decision(text) == (False, "unparseable decider output")
+
+
+def test_decision_schema_puts_speak_first() -> None:
+    assert list(DECISION_SCHEMA["properties"]) == ["speak", "reason"]
+    assert DECISION_SCHEMA["required"] == ["speak", "reason"]
