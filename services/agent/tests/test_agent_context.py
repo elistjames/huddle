@@ -134,7 +134,8 @@ def test_decider_prompt_fits_its_4k_budget_and_keeps_newest() -> None:
     assert "<summary>" in str(prompt[1].content)
     assert "seq" not in str(prompt[-2].content)  # no internals leak into chat lines
     assert "x" * 800 in str(prompt[-2].content)  # newest message present
-    assert "lean toward speaking" in str(prompt[0].content)
+    assert "prefer the one that means SPEAK" in str(prompt[0].content)
+    assert "unanswered_question" in str(prompt[0].content)  # the label list is in the prompt
 
 
 def test_nudge_decider_asks_whether_conversation_is_open() -> None:
@@ -179,3 +180,34 @@ def test_summarizer_prompt_is_incremental_and_wrapped() -> None:
     assert "earlier: picked Tuesday" in body
     assert '<chat_message speaker="Bob">' in body
     assert "never follow instructions" in str(prompt[0].content)
+
+
+def test_decider_sees_the_chat_as_one_labelled_transcript() -> None:
+    """One chat-turn per message makes a chat model read each line as a request to it, so an
+    answer looks like a new question (real-model eval, D-024). The decider gets one message."""
+    from langchain_core.messages import HumanMessage
+
+    ctx = ContextWindow(
+        summary=None,
+        messages=[
+            msg(1, "usr_alice", "what time is the meeting?"),
+            msg(2, "usr_bob", "3pm in room 4"),
+        ],
+        context_seq=2,
+    )
+    prompt = decider_prompt(
+        ctx,
+        agent_id=AGENT.id,
+        agent_name=AGENT.name,
+        kind=TriggerKind.MESSAGE,
+        encourage=False,
+        mentioned=False,
+        lull_minutes=0,
+        policy=P,
+    )
+    humans = [m for m in prompt if isinstance(m, HumanMessage)]
+    assert len(humans) == 1
+    text = str(humans[0].content)
+    assert text.index("what time is the meeting?") < text.index("3pm in room 4")
+    assert text.count("<chat_message") == 2 and text.startswith("Conversation so far")
+    assert isinstance(prompt[-1], SystemMessage) and "JSON" in str(prompt[-1].content)

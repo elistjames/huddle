@@ -12,6 +12,7 @@ exercised against a real Ollama runtime or real Llama models in this repository'
 from __future__ import annotations
 
 import asyncio
+import json
 from typing import Any
 
 import httpx
@@ -20,7 +21,10 @@ from langchain_ollama import ChatOllama
 from ollama import ResponseError
 
 from huddle_agent.context import estimate_tokens
+from huddle_agent.domain import TriggerKind
 from huddle_agent.models.base import (
+    DECISION_SCHEMA,
+    SITUATION_SCHEMA,
     Decision,
     Draft,
     ModelError,
@@ -49,12 +53,18 @@ class OllamaModelClient:
         self._num_ctx = num_ctx
         # Extra httpx.AsyncClient kwargs (tests inject a mocked `transport` here).
         self._client_kwargs: dict[str, Any] = dict(client_kwargs or {})
-        self._llms: dict[tuple[str, int, bool, float], ChatOllama] = {}
+        self._llms: dict[tuple[str, int, bool, float, str], ChatOllama] = {}
 
     def llm(
-        self, model: str, max_tokens: int, *, json_mode: bool, temperature: float
+        self,
+        model: str,
+        max_tokens: int,
+        *,
+        json_mode: bool,
+        temperature: float,
+        schema: dict[str, Any] | None = None,
     ) -> ChatOllama:
-        key = (model, max_tokens, json_mode, temperature)
+        key = (model, max_tokens, json_mode, temperature, json.dumps(schema, sort_keys=True))
         llm = self._llms.get(key)
         if llm is None:
             llm = ChatOllama(
@@ -63,7 +73,7 @@ class OllamaModelClient:
                 num_ctx=self._num_ctx,
                 num_predict=max_tokens,
                 temperature=temperature,
-                format="json" if json_mode else None,
+                format=schema if schema is not None else ("json" if json_mode else None),
                 async_client_kwargs=self._client_kwargs,
                 validate_model_on_init=False,
             )
@@ -71,10 +81,19 @@ class OllamaModelClient:
         return llm
 
     async def _invoke(
-        self, req: ModelRequest, *, json_mode: bool, temperature: float
+        self,
+        req: ModelRequest,
+        *,
+        json_mode: bool,
+        temperature: float,
+        schema: dict[str, Any] | None = None,
     ) -> tuple[str, Usage]:
         llm = self.llm(
-            req.model, req.max_output_tokens, json_mode=json_mode, temperature=temperature
+            req.model,
+            req.max_output_tokens,
+            json_mode=json_mode,
+            temperature=temperature,
+            schema=schema,
         )
         prompt: list[BaseMessage] = list(req.prompt)
         try:
@@ -101,9 +120,10 @@ class OllamaModelClient:
         return text, usage
 
     async def decide(self, req: ModelRequest) -> Decision:
-        text, usage = await self._invoke(req, json_mode=True, temperature=0.0)
+        schema = DECISION_SCHEMA if req.kind == TriggerKind.NUDGE else SITUATION_SCHEMA
+        text, usage = await self._invoke(req, json_mode=True, temperature=0.0, schema=schema)
         speak, reason = parse_decision(text)
-        return Decision(speak=speak, reason=reason, usage=usage)
+        return Decision(speak=speak, reason=reason, usage=usage, raw=text)
 
     async def write(self, req: ModelRequest) -> Draft:
         text, usage = await self._invoke(req, json_mode=False, temperature=0.7)

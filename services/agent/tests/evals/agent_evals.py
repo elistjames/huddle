@@ -106,7 +106,7 @@ class Sim:
         n_humans: int,
         *,
         eager: bool = False,
-        capacity_tokens: int = 500_000,
+        capacity_tokens: int = 750_000,
     ) -> None:
         self.clock = FakeClock()
         self.t0 = self.clock.monotonic()
@@ -437,7 +437,7 @@ async def eval_nudges(n: int = 100, seed: int = 47) -> dict[str, Any]:
 
 async def _cost_run(humans_n: int, seed: int) -> tuple[Sim, int]:
     rng = random.Random(seed)
-    sim = Sim(2)  # N = 3, default 500k-token fixed window
+    sim = Sim(2)  # N = 3, default 750k-token fixed window
     ids = [h[0] for h in humans(2)]
     t = 5.0
     for _ in range(humans_n):

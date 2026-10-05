@@ -15,7 +15,7 @@ Adapted from the "Security from the first commit" post in https://github.com/fes
 
 | Layer | What | Where |
 |---|---|---|
-| Merge gate | ruff format + lint, bandit, pyright (strict), pytest (+ coverage), INDEX check; web: lint, typecheck, test, build | `scripts/gate.sh`, `.github/workflows/ci.yml` |
+| Merge gate | ruff format + lint, bandit, pyright (strict), pytest (+ coverage), INDEX check; web: lint, typecheck, test, build. `gate.sh` runs the integration tests too when `HUDDLE_TEST_POSTGRES_DSN` and `HUDDLE_TEST_REDIS_URL` are set (start stores with `eval "$(scripts/dev-stores.sh)"`) so it matches CI; without them it says it skipped them | `scripts/gate.sh`, `.github/workflows/ci.yml` |
 | Integration tests | Real Postgres/Redis. Skip locally if unreachable; **fail** in CI (`HUDDLE_REQUIRE_STORES=1`) | `@pytest.mark.integration` |
 | Secret scan | TruffleHog, verified only, PR + weekly | `secret-scan.yml` |
 | Dependency CVEs | OSV-Scanner on `uv.lock`, weekly + on lockfile change | `osv-scan.yml` |

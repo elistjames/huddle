@@ -196,6 +196,27 @@ def _fit(
     return to_langchain(newest_within(ctx.messages, room), ctx.names, agent_id)
 
 
+def _fit_as_transcript(
+    ctx: ContextWindow,
+    agent_name: str,
+    fixed_tokens: int,
+    max_input_tokens: int,
+) -> list[BaseMessage]:
+    """The recent chat as ONE labelled transcript message (oldest first).
+
+    The decider judges the whole conversation. Sent as one chat-turn per message, a chat model
+    reads every line as a request addressed to it, and a reply to a question ("3pm in room 4")
+    looks like a new request instead of an answer. In the real-model eval that made the
+    decider miss that questions were already answered (D-024)."""
+    summary_tokens = ctx.summary.token_count if ctx.summary else 0
+    room = max(max_input_tokens - fixed_tokens - summary_tokens, MESSAGE_OVERHEAD_TOKENS)
+    recent = newest_within(ctx.messages, room)
+    if not recent:
+        return []
+    body = transcript(recent, ctx.names, agent_name)
+    return [HumanMessage(content="Conversation so far, oldest first:\n" + body)]
+
+
 def decider_prompt(
     ctx: ContextWindow,
     *,
@@ -218,13 +239,25 @@ def decider_prompt(
         )
     else:
         task = (
-            f"Decide whether {agent_name} should post a message now. Speak only if you can add "
-            "something new: a missing fact, a different angle, a summary of a tangle, or an "
-            "answer to a question nobody has answered. Stay silent for greetings, "
-            "acknowledgements and small talk between people, and when people are already "
-            'handling it. A question that someone answered with "I don\'t know", or that '
-            "people are stuck on, is not handled: speak if you can help. When only one person "
-            "is talking to you, they are talking to you."
+            f"Read the last messages and decide whether {agent_name} should post. Choose the "
+            "ONE label that best describes the situation.\n"
+            "Labels that mean SPEAK:\n"
+            "- looks_wrong: CHECK THIS FIRST. Someone stated a fact that is incorrect, or "
+            "missed an important fact, even if others agreed with it\n"
+            "- unanswered_question: someone asked the group a question and nobody has replied "
+            "with an answer\n"
+            "- wants_help: someone asked for ideas, help or a recommendation\n"
+            "- stuck: people say they are stuck, unsure, or do not know what to do "
+            '("I don\'t know" is not an answer)\n'
+            "- tangle: a confusing or disagreeing conversation that a short summary would help\n"
+            "Labels that mean STAY QUIET:\n"
+            "- already_answered: a later message answers the question, even briefly (a "
+            "command, a number, a name, a time)\n"
+            "- plans_or_status: people are sharing plans, status or logistics among themselves\n"
+            "- small_talk: greetings, thanks, jokes, or people asking each other about their "
+            "own lives (a weekend, lunch, how they are); those questions are not for you\n"
+            "- finished: the conversation is finished\n"
+            "- nothing_to_add: none of the above; you would have nothing new to say"
         )
         if mentioned:
             task += (
@@ -234,18 +267,25 @@ def decider_prompt(
             )
         if encourage:
             task += (
-                f" {agent_name} has been quiet for a while; lean toward speaking if you have "
-                "anything genuinely useful."
+                f" {agent_name} has been quiet for a while; when two labels fit, prefer the "
+                "one that means SPEAK."
             )
     head = system_prompt(agent_name) + "\n\nTASK:\n" + task
-    tail = (
-        'Respond with JSON only, exactly: {"speak": true or false, "reason": "<at most 12 words>"}'
-    )
+    if kind == TriggerKind.NUDGE:
+        tail = (
+            "Respond with JSON only, exactly: "
+            '{"speak": true or false, "reason": "<at most 12 words>"}'
+        )
+    else:
+        tail = (
+            'Respond with JSON only, exactly: {"situation": "<one label>", '
+            '"reason": "<at most 12 words>"}'
+        )
     fixed = estimate_tokens(head) + estimate_tokens(tail)
     return [
         SystemMessage(content=head),
         *_summary_line(ctx.summary),
-        *_fit(ctx, agent_id, fixed, policy.decider_max_input_tokens),
+        *_fit_as_transcript(ctx, agent_name, fixed, policy.decider_max_input_tokens),
         SystemMessage(content="End of chat content. " + tail),
     ]
 

@@ -12,7 +12,16 @@ run uv run ruff format --check .
 run uv run ruff check .
 run uv run bandit -c pyproject.toml -r libs services -q
 run uv run pyright
-run uv run pytest -m "not integration" -q
+# CI runs every test, including the integration tests that need Postgres and Redis. Do the same
+# whenever the stores are configured (eval "$(scripts/dev-stores.sh)"); otherwise say so, because
+# a gate that skips them can pass what CI fails (it did: a budget test after a capacity change).
+if [ -n "${HUDDLE_TEST_POSTGRES_DSN:-}" ] && [ -n "${HUDDLE_TEST_REDIS_URL:-}" ]; then
+  run uv run pytest -q
+else
+  echo "NOTE: HUDDLE_TEST_POSTGRES_DSN/HUDDLE_TEST_REDIS_URL not set: skipping integration tests"
+  echo "      (CI runs them). Start stores with: eval \"\$(scripts/dev-stores.sh)\""
+  run uv run pytest -m "not integration" -q
+fi
 if [ -f apps/web/package.json ] && [ -d apps/web/node_modules ]; then
   (cd apps/web && run npm run --silent lint && run npm run --silent typecheck && run npm test --silent)
 fi

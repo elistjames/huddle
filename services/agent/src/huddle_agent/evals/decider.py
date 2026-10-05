@@ -60,6 +60,7 @@ class RecordingModels:
         self._inner = inner
         self._real_writer = real_writer
         self.decisions: list[tuple[bool, str]] = []
+        self.raw: list[str] = []
         self.latency: dict[Stage, list[float]] = defaultdict(list)
         self.drafts: list[str] = []
 
@@ -70,6 +71,7 @@ class RecordingModels:
         finally:
             self.latency[Stage.DECIDE].append(time.monotonic() - t0)
         self.decisions.append((d.speak, d.reason))
+        self.raw.append(d.raw)
         return d
 
     async def write(self, req: ModelRequest) -> Draft:
@@ -103,6 +105,7 @@ class Trial:
     status: str
     error: str | None = None
     reply: str | None = None
+    raw: str = ""  # the decider's unparsed answer
     problems: list[str] = field(default_factory=list[str])
 
 
@@ -188,6 +191,7 @@ async def run_trial(
         status=str(out.status),
         error=error,
         reply=reply,
+        raw=rec.raw[-1] if rec.raw else "",
         problems=reply_problems(reply) if reply is not None and spoke else [],
     )
     return trial, rec
@@ -255,6 +259,8 @@ async def main_async(args: argparse.Namespace) -> int:
         if args.verbose or ok != len(trials):
             for t in trials[: (len(trials) if args.verbose else 2)]:
                 tail = f"  reply: {t.reply!r}" if t.reply else ""
+                if t.raw and (args.verbose or t.reason.startswith(("unparseable", "(answer"))):
+                    tail += f"  raw: {t.raw[:160]!r}"
                 err = f"  ERROR {t.error}" if t.error else ""
                 print(f"        - {'spoke' if t.spoke else 'quiet'}: {t.reason}{err}{tail}")
 
