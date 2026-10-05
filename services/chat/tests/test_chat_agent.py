@@ -56,7 +56,8 @@ async def test_budget_debits_and_resets_only_at_the_window_boundary(
     clock.now = datetime(2026, 9, 30, 23, 59, 59, tzinfo=UTC)
     assert await usage(service, 1) == 100_001  # no gradual refill inside the window
     state = await service.budget_state(sid)
-    assert state.view.used_pct == 21  # rounds up: 20.0002% -> 21
+    # rounds up, whatever the default capacity is (13.3% of 750k -> 14)
+    assert state.view.used_pct == -(-100_001 * 100 // state.capacity_tokens)
     clock.now = datetime(2026, 10, 1, 0, 0, 0, tzinfo=UTC)
     state = await service.budget_state(sid)  # lazy reset on read
     assert state.used_tokens == 0 and state.window_started_at == clock.now
