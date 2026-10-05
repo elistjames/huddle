@@ -37,3 +37,6 @@ After the parsing fix: accuracy 72%, recall 73%, `unanswered` 100%. But the mode
 
 ## Third real-model eval (2026-10-05): 85% accuracy, 91% recall
 With situation labels: decider accuracy 85%, precision 83%, recall 91%; stuck and unanswered 100%; the label always agreed with its reason. Three misses left, each a label-definition problem: a personal question between two people was read as an unanswered question for the agent; a terse answer (a command) was not recognised as an answer; and "yeah I think so" after a wrong fact was read as the question being answered. The label definitions now say: check `looks_wrong` first even if others agreed; a later message answers a question even briefly; people asking each other about their own lives is `small_talk`. Not yet re-measured.
+
+## Fourth real-model eval (2026-10-05): 90% accuracy, 100% recall
+Decider accuracy 90%, precision 85%, recall 100% (the agent never missed a case where it should speak); the three earlier misses are fixed. Two left, both "a later message already answered the question" (a meeting time, a git command): the decider now receives the chat as one labelled transcript message instead of one chat-turn per message, because a chat model reads each separate turn as a request addressed to it and an answer looks like a new request. Not yet re-measured.

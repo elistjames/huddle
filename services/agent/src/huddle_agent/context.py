@@ -196,6 +196,27 @@ def _fit(
     return to_langchain(newest_within(ctx.messages, room), ctx.names, agent_id)
 
 
+def _fit_as_transcript(
+    ctx: ContextWindow,
+    agent_name: str,
+    fixed_tokens: int,
+    max_input_tokens: int,
+) -> list[BaseMessage]:
+    """The recent chat as ONE labelled transcript message (oldest first).
+
+    The decider judges the whole conversation. Sent as one chat-turn per message, a chat model
+    reads every line as a request addressed to it, and a reply to a question ("3pm in room 4")
+    looks like a new request instead of an answer. In the real-model eval that made the
+    decider miss that questions were already answered (D-024)."""
+    summary_tokens = ctx.summary.token_count if ctx.summary else 0
+    room = max(max_input_tokens - fixed_tokens - summary_tokens, MESSAGE_OVERHEAD_TOKENS)
+    recent = newest_within(ctx.messages, room)
+    if not recent:
+        return []
+    body = transcript(recent, ctx.names, agent_name)
+    return [HumanMessage(content="Conversation so far, oldest first:\n" + body)]
+
+
 def decider_prompt(
     ctx: ContextWindow,
     *,
@@ -264,7 +285,7 @@ def decider_prompt(
     return [
         SystemMessage(content=head),
         *_summary_line(ctx.summary),
-        *_fit(ctx, agent_id, fixed, policy.decider_max_input_tokens),
+        *_fit_as_transcript(ctx, agent_name, fixed, policy.decider_max_input_tokens),
         SystemMessage(content="End of chat content. " + tail),
     ]
 
