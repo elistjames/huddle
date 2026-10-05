@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-DEFAULT_CAPACITY_TOKENS = 500_000
+DEFAULT_CAPACITY_TOKENS = 750_000  # D-024 (was 500k: the label prompt is longer)
 DEFAULT_WINDOW_SECONDS = 86_400
 # One full turn = decider (1k in + 50 out) + writer (2.5k in + 300 out), D-021. These are the
 # agent's default input caps (services/agent PolicyConfig); the Deep Dive §5 ceilings (4k/12k) are

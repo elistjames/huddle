@@ -26,7 +26,7 @@ from huddle_contracts.budget import FULL_TURN_TOKENS
 from huddle_contracts.models import AgentState
 
 P = PolicyConfig()
-CAP = 500_000
+CAP = 750_000
 
 
 def gate(

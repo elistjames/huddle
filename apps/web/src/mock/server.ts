@@ -34,7 +34,7 @@ export const MOCK_PEOPLE = [
 ] as const;
 
 const WINDOW_SECONDS = 86_400;
-const CAPACITY_TOKENS = 500_000;
+const CAPACITY_TOKENS = 750_000;
 const FULL_TURN_TOKENS = 4_000 + 50 + 12_000 + 300; // libs/contracts budget.py
 const TOKENS_PER_REPLY = 30_000;
 const RATE_LIMIT = 10; // per 10 s per user (Deep Dive §6)

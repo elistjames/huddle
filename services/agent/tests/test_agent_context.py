@@ -134,7 +134,8 @@ def test_decider_prompt_fits_its_4k_budget_and_keeps_newest() -> None:
     assert "<summary>" in str(prompt[1].content)
     assert "seq" not in str(prompt[-2].content)  # no internals leak into chat lines
     assert "x" * 800 in str(prompt[-2].content)  # newest message present
-    assert "lean toward speaking" in str(prompt[0].content)
+    assert "prefer the one that means SPEAK" in str(prompt[0].content)
+    assert "unanswered_question" in str(prompt[0].content)  # the label list is in the prompt
 
 
 def test_nudge_decider_asks_whether_conversation_is_open() -> None:

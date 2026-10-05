@@ -15,8 +15,10 @@ import httpx
 import pytest
 from langchain_core.messages import HumanMessage, SystemMessage
 
+from huddle_agent.domain import TriggerKind
 from huddle_agent.models.base import (
     DECISION_SCHEMA,
+    SITUATION_SCHEMA,
     ModelError,
     ModelRequest,
     ModelTimeout,
@@ -78,9 +80,14 @@ def client(handler: Handler) -> OllamaModelClient:
 
 
 def req(
-    stage: Stage, model: str = "llama3.2:3b", max_out: int = 50, timeout: float = 5
+    stage: Stage,
+    model: str = "llama3.2:3b",
+    max_out: int = 50,
+    timeout: float = 5,
+    kind: TriggerKind = TriggerKind.MESSAGE,
 ) -> ModelRequest:
     return ModelRequest(
+        kind=kind,
         stage=stage,
         prompt=[SystemMessage(content="rules"), HumanMessage(content="hi", name="Alice")],
         model=model,
@@ -96,7 +103,7 @@ async def test_decider_request_shape_and_parsing() -> None:
     assert (d.usage.input_tokens, d.usage.output_tokens) == (321, 12)
     body = fake.requests[0]
     assert body["model"] == "llama3.2:3b"
-    assert body["format"] == DECISION_SCHEMA  # structured output: the shape cannot wander
+    assert body["format"] == SITUATION_SCHEMA  # a closed list of labels, not a free yes/no
     options = body["options"]
     assert isinstance(options, dict)
     assert options["num_ctx"] == NUM_CTX == 16384  # explicit: Ollama's default would truncate
@@ -206,3 +213,43 @@ def test_parse_decision_without_a_verdict_stays_quiet(text: str) -> None:
 def test_decision_schema_puts_speak_first() -> None:
     assert list(DECISION_SCHEMA["properties"]) == ["speak", "reason"]
     assert DECISION_SCHEMA["required"] == ["speak", "reason"]
+
+
+@pytest.mark.parametrize(
+    ("text", "speak", "label"),
+    [
+        ('{"situation": "stuck", "reason": "nobody knows"}', True, "stuck"),
+        (
+            '{"situation": "looks_wrong", "reason": "Sydney is not the capital"}',
+            True,
+            "looks_wrong",
+        ),
+        ('{"situation": "already_answered", "reason": "Sam answered"}', False, "already_answered"),
+        ('{"situation": "small_talk", "reason": "chat"}', False, "small_talk"),
+        ('{"situation": "unanswered_question", "reason": "no repl', True, "unanswered_question"),
+        ('Sure: {"situation": "plans_or_status", "reason": "logistics"}', False, "plans_or_status"),
+    ],
+)
+def test_parse_decision_turns_a_situation_label_into_a_decision(
+    text: str, speak: bool, label: str
+) -> None:
+    from huddle_agent.models.base import parse_decision
+
+    got, reason = parse_decision(text)
+    assert got is speak and reason.startswith(label)
+
+
+def test_an_unknown_label_stays_quiet() -> None:
+    from huddle_agent.models.base import parse_decision
+
+    assert parse_decision('{"situation": "maybe_speak", "reason": "x"}') == (
+        False,
+        "unparseable decider output",
+    )
+
+
+async def test_nudge_decisions_keep_the_speak_schema() -> None:
+    fake = FakeOllama(['{"speak": false, "reason": "closed"}'])
+    d = await client(fake).decide(req(Stage.DECIDE, kind=TriggerKind.NUDGE))
+    assert d.speak is False
+    assert fake.requests[0]["format"] == DECISION_SCHEMA

@@ -119,21 +119,48 @@ _SPEAK_FIELD = re.compile(r"""["']?speak["']?\s*[:=]\s*["']?(true|false|yes|no)\
 _REASON_FIELD = re.compile(r'"reason"\s*:\s*"([^"]*)', re.IGNORECASE)
 
 # What the decider must return. Passed to Ollama as the structured-output schema so a small model
-# cannot wander off the shape; `speak` comes first so a reply cut off at the token cap still
-# carries the decision.
+# cannot wander off the shape.
 DECISION_SCHEMA: dict[str, Any] = {
     "type": "object",
     "properties": {"speak": {"type": "boolean"}, "reason": {"type": "string"}},
     "required": ["speak", "reason"],
 }
 
+# Asked a yes/no question, a 3B model often commits to the boolean first and then writes a
+# reason that contradicts it ("speak": true, "reason": "already answered"). So for ordinary
+# messages the decider picks ONE label from a closed list and the code turns the label into a
+# decision (D-024). The labels are the spec's speak policy (Deep Dive §5) made explicit.
+SPEAK_SITUATIONS: tuple[str, ...] = (
+    "unanswered_question",
+    "wants_help",
+    "stuck",
+    "looks_wrong",
+    "tangle",
+)
+QUIET_SITUATIONS: tuple[str, ...] = (
+    "already_answered",
+    "plans_or_status",
+    "small_talk",
+    "finished",
+    "nothing_to_add",
+)
+SITUATION_SCHEMA: dict[str, Any] = {
+    "type": "object",
+    "properties": {
+        "situation": {"type": "string", "enum": [*SPEAK_SITUATIONS, *QUIET_SITUATIONS]},
+        "reason": {"type": "string"},
+    },
+    "required": ["situation", "reason"],
+}
+_SITUATION_FIELD = re.compile(r'"situation"\s*:\s*"([a-z_]+)', re.IGNORECASE)
+
 
 def parse_decision(text: str) -> tuple[bool, str]:
-    """Parse the decider's `{speak, reason}`. Anything unparseable means "do not speak".
+    """Read the decider's answer: `{situation, reason}` (messages) or `{speak, reason}` (the
+    re-engagement nudge). Anything unreadable means "do not speak".
 
-    A small model's answer is often cut off at the output cap or wrapped in prose
-    (`{"speak": true, "reason": "Typical conference room capacity va`), so after a strict JSON
-    parse this falls back to reading the `speak` field directly. In manual testing 8 of 35
+    A small model's answer is often cut off at the output cap or wrapped in prose, so after a
+    strict JSON parse this falls back to reading the field directly. In manual testing 8 of 35
     cases scored as "stay quiet" only because the answer was not valid JSON."""
     for candidate in [text.strip(), *_JSON_OBJ.findall(text)]:
         try:
@@ -142,16 +169,23 @@ def parse_decision(text: str) -> tuple[bool, str]:
             continue
         if isinstance(raw, dict):
             data = cast(dict[str, Any], raw)
+            reason = str(data.get("reason", ""))
+            situation = data.get("situation")
+            if isinstance(situation, str) and situation in (*SPEAK_SITUATIONS, *QUIET_SITUATIONS):
+                return situation in SPEAK_SITUATIONS, f"{situation}: {reason}"[:200]
             speak = data.get("speak")
-            reason = data.get("reason", "")
             if isinstance(speak, str):
                 speak = speak.strip().lower() in {"true", "yes"}
             if isinstance(speak, bool):
-                return speak, str(reason)[:200]
+                return speak, reason[:200]
+    reason_match = _REASON_FIELD.search(text)
+    reason = reason_match.group(1) if reason_match else "(answer was cut off)"
+    label = _SITUATION_FIELD.search(text)
+    if label is not None and label.group(1).lower() in (*SPEAK_SITUATIONS, *QUIET_SITUATIONS):
+        name = label.group(1).lower()
+        return name in SPEAK_SITUATIONS, f"{name}: {reason}"[:200]
     found = _SPEAK_FIELD.search(text)
     if found is not None:
-        reason_match = _REASON_FIELD.search(text)
-        reason = reason_match.group(1) if reason_match else "(answer was cut off)"
         return found.group(1).lower() in {"true", "yes"}, reason[:200]
     return False, "unparseable decider output"
 

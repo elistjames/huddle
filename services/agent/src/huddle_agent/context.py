@@ -218,21 +218,22 @@ def decider_prompt(
         )
     else:
         task = (
-            f"Decide whether {agent_name} should post a message now.\n"
-            "Answer speak=true when:\n"
-            "- someone asked a question and nobody has answered it yet;\n"
-            "- someone asked for ideas, help or a recommendation;\n"
-            "- people say they are stuck, unsure, or do not know;\n"
-            "- someone states something that looks wrong or is missing an important fact "
-            "(correct it politely);\n"
-            "- the conversation is a tangle that a short summary would help.\n"
-            "Answer speak=false when:\n"
-            "- another person already answered the question;\n"
-            "- people are sharing plans, status or logistics among themselves;\n"
-            "- it is a greeting, thanks, a joke or small talk between people;\n"
-            "- the conversation is finished.\n"
-            'A question that someone answered with "I don\'t know" is NOT answered. '
-            "When only one person is talking to you, they are talking to you."
+            f"Read the last messages and decide whether {agent_name} should post. Choose the "
+            "ONE label that best describes the situation.\n"
+            "Labels that mean SPEAK:\n"
+            "- unanswered_question: someone asked a question and nobody has answered it yet\n"
+            "- wants_help: someone asked for ideas, help or a recommendation\n"
+            "- stuck: people say they are stuck, unsure, or do not know what to do "
+            '("I don\'t know" is not an answer)\n'
+            "- looks_wrong: someone stated something that looks wrong or misses an important "
+            "fact\n"
+            "- tangle: a confusing or disagreeing conversation that a short summary would help\n"
+            "Labels that mean STAY QUIET:\n"
+            "- already_answered: another person already answered the latest question\n"
+            "- plans_or_status: people are sharing plans, status or logistics among themselves\n"
+            "- small_talk: greetings, thanks, jokes or chat between people\n"
+            "- finished: the conversation is finished\n"
+            "- nothing_to_add: none of the above; you would have nothing new to say"
         )
         if mentioned:
             task += (
@@ -242,13 +243,20 @@ def decider_prompt(
             )
         if encourage:
             task += (
-                f" {agent_name} has been quiet for a while; lean toward speaking if you have "
-                "anything genuinely useful."
+                f" {agent_name} has been quiet for a while; when two labels fit, prefer the "
+                "one that means SPEAK."
             )
     head = system_prompt(agent_name) + "\n\nTASK:\n" + task
-    tail = (
-        'Respond with JSON only, exactly: {"speak": true or false, "reason": "<at most 12 words>"}'
-    )
+    if kind == TriggerKind.NUDGE:
+        tail = (
+            "Respond with JSON only, exactly: "
+            '{"speak": true or false, "reason": "<at most 12 words>"}'
+        )
+    else:
+        tail = (
+            'Respond with JSON only, exactly: {"situation": "<one label>", '
+            '"reason": "<at most 12 words>"}'
+        )
     fixed = estimate_tokens(head) + estimate_tokens(tail)
     return [
         SystemMessage(content=head),

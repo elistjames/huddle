@@ -21,8 +21,10 @@ from langchain_ollama import ChatOllama
 from ollama import ResponseError
 
 from huddle_agent.context import estimate_tokens
+from huddle_agent.domain import TriggerKind
 from huddle_agent.models.base import (
     DECISION_SCHEMA,
+    SITUATION_SCHEMA,
     Decision,
     Draft,
     ModelError,
@@ -118,9 +120,8 @@ class OllamaModelClient:
         return text, usage
 
     async def decide(self, req: ModelRequest) -> Decision:
-        text, usage = await self._invoke(
-            req, json_mode=True, temperature=0.0, schema=DECISION_SCHEMA
-        )
+        schema = DECISION_SCHEMA if req.kind == TriggerKind.NUDGE else SITUATION_SCHEMA
+        text, usage = await self._invoke(req, json_mode=True, temperature=0.0, schema=schema)
         speak, reason = parse_decision(text)
         return Decision(speak=speak, reason=reason, usage=usage, raw=text)
 
