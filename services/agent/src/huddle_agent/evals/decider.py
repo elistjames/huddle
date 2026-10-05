@@ -46,7 +46,7 @@ from huddle_agent.models.base import (
 from huddle_agent.models.ollama import OllamaModelClient
 from huddle_agent.policy import SkipReason
 from huddle_agent.presence import Presence
-from huddle_agent.runner import RunExecutor
+from huddle_agent.runner import RunExecutor, clean_draft
 
 MAX_REPLY_CHARS = 600
 _BAD_STARTS = ("assistant", "system", "user", "huddle ai:", "ai:")
@@ -82,7 +82,8 @@ class RecordingModels:
             d = await self._inner.write(req)
         finally:
             self.latency[Stage.WRITE].append(time.monotonic() - t0)
-        self.drafts.append(d.text)
+        # Production cleans the draft in the runner; record what users would see.
+        self.drafts.append(clean_draft(d.text, "Huddle AI"))
         return d
 
     async def summarize(self, req: ModelRequest) -> SummaryText:
